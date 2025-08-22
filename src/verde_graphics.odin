@@ -9,6 +9,8 @@ GL_VERSION_MINOR :: 3
 MAX_TRIANGLES     :: 4096
 MAX_VERTEX_COUNT  :: MAX_TRIANGLES * 3
 
+VTX_SIZE :: size_of(Render_Vertex)
+
 @(rodata) VERTEX_SHADER   := #load("shaders/ui.vert", cstring)
 @(rodata) FRAGMENT_SHADER := #load("shaders/ui.frag", cstring)
 
@@ -24,8 +26,11 @@ Render_Vertex :: struct {
 }
 
 Render_Buffer :: struct {
-  vertices : []Render_Vertex,
-  indices  : []u32,
+  vertices : [^]Render_Vertex,
+  indices  : [^]u32,
+
+  vtx_count : u32,
+  idx_count : u32,
 }
 
 GFX_State :: struct {
@@ -49,8 +54,6 @@ gfx_init :: proc(load_proc: gl.Set_Proc_Address_Type) -> (ctx: GFX_State, ok: bo
   // Vertex Array
   gl.GenVertexArrays(1, &ctx.ui_vao)
   gl.BindVertexArray(ctx.ui_vao)
-
-  VTX_SIZE :: size_of(Render_Vertex)
 
   // Vertex Buffer
   gl.GenBuffers(1, &ctx.ui_vbo)
@@ -94,8 +97,8 @@ gfx_init :: proc(load_proc: gl.Set_Proc_Address_Type) -> (ctx: GFX_State, ok: bo
     .UI_ProjMatrix = gl.GetUniformLocation(ctx.ui_shader, "ProjMatrix"),
   }
 
-  ctx.render_buffer.vertices = make([]Render_Vertex, MAX_VERTEX_COUNT)
-  ctx.render_buffer.indices = make([]u32, MAX_VERTEX_COUNT)
+  ctx.render_buffer.vertices = make([^]Render_Vertex, MAX_VERTEX_COUNT)
+  ctx.render_buffer.indices = make([^]u32, MAX_VERTEX_COUNT)
 
   return ctx, true
 }
@@ -103,4 +106,85 @@ gfx_init :: proc(load_proc: gl.Set_Proc_Address_Type) -> (ctx: GFX_State, ok: bo
 gfx_clear :: proc(color: vec4 = {0.1, 0.1, 0.1, 1.0}) {
   gl.ClearColor(color.r, color.g, color.b, color.a)
   gl.Clear(gl.DEPTH_BUFFER_BIT | gl.COLOR_BUFFER_BIT)
+}
+
+gfx_begin_frame :: proc(ctx: ^GFX_State) {
+  gfx_ready(ctx)
+
+  gl.UseProgram(ctx.ui_shader)
+  gl.BindVertexArray(ctx.ui_vao)
+}
+
+gfx_end_frame :: proc(ctx: ^GFX_State) {
+  gfx_flush(ctx)
+}
+
+gfx_ready :: proc(ctx: ^GFX_State) {
+  ctx.render_buffer.vtx_count = 0
+  ctx.render_buffer.idx_count = 0
+}
+
+gfx_flush :: proc(ctx: ^GFX_State) {
+  using ctx
+
+  gl.BindBuffer(gl.ARRAY_BUFFER, ui_vbo)
+  gl.BufferSubData(gl.ARRAY_BUFFER, 0, cast(int) render_buffer.vtx_count * VTX_SIZE, render_buffer.vertices)
+
+  gl.BindBuffer(gl.ELEMENT_ARRAY_BUFFER, ui_ibo)
+  gl.BufferSubData(gl.ELEMENT_ARRAY_BUFFER, 0, cast(int) render_buffer.idx_count * size_of(u32), render_buffer.indices)
+  gl.DrawElements(gl.TRIANGLES, cast(i32) render_buffer.idx_count, gl.UNSIGNED_INT, nil)
+}
+
+gfx_push_rect :: proc(ctx : ^GFX_State, pos, size : vec2, color : vec4 = 1.0) {
+  using ctx
+
+  if render_buffer.vtx_count + 4 > MAX_VERTEX_COUNT || render_buffer.idx_count + 6 > MAX_VERTEX_COUNT {
+    gfx_flush(ctx)
+    gfx_ready(ctx)
+  }
+
+  vc := render_buffer.vtx_count
+  ic := render_buffer.idx_count
+
+	p0 := pos
+	p1 := pos + (vec2{size.x, 0})
+	p2 := pos + (vec2{size.x, size.y})
+	p3 := pos + (vec2{0, size.y})
+
+	render_buffer.vertices[vc + 0] = Render_Vertex{p0, color, {0,0}}
+	render_buffer.vertices[vc + 1] = Render_Vertex{p1, color, {1,0}}
+	render_buffer.vertices[vc + 2] = Render_Vertex{p2, color, {1,1}}
+	render_buffer.vertices[vc + 3] = Render_Vertex{p3, color, {0,1}}
+
+	render_buffer.indices[ic + 0] = vc + 0
+	render_buffer.indices[ic + 1] = vc + 1
+	render_buffer.indices[ic + 2] = vc + 2
+	render_buffer.indices[ic + 3] = vc + 2
+	render_buffer.indices[ic + 4] = vc + 3
+	render_buffer.indices[ic + 5] = vc + 0
+
+	render_buffer.vtx_count += 4
+	render_buffer.idx_count += 6
+}
+
+gfx_upload_proj :: proc(ctx: ^GFX_State, width, height : f32) {
+  proj := ortho_matrix(0, width, height, 0, -1.0, 100.0)
+  gl.UniformMatrix4fv(ctx.uniform_loc[.UI_ProjMatrix], 1, gl.FALSE, &proj[0][0])
+}
+
+ortho_matrix :: proc(left, right, bottom, top: f32, near, far: f32) -> mat4x4 {
+    result: mat4x4 = 0
+    result[0][0] =  2.0 / (right - left)
+    result[1][1] =  2.0 / (top - bottom)
+    result[2][2] = -2.0 / (far - near)
+
+    result[3][0] = -(right + left) / (right - left)
+    result[3][1] = -(top + bottom) / (top - bottom)
+    result[3][2] = -(far + near) / (far - near)
+    result[3][3] = 1.0
+    return result
+}
+
+gfx_resize_target :: proc(w, h : i32) {
+  gl.Viewport(0, 0, w, h)
 }

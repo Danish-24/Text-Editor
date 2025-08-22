@@ -1,3 +1,3 @@
 #!/bin/bash
 
-odin run ./src/build
+odin run ./src/build -debug
