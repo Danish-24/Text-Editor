@@ -23,14 +23,21 @@ Render_Vertex :: struct {
   uv       : vec2,
 }
 
-GFX_Context :: struct {
+Render_Buffer :: struct {
+  vertices : []Render_Vertex,
+  indices  : []u32,
+}
+
+GFX_State :: struct {
   ui_vao, ui_vbo, ui_ibo : u32,
   ui_shader              : u32,
   uniform_loc            : [Shader_Uniform]i32,
+
+  render_buffer          : Render_Buffer,
 }
 
-gfx_init :: proc(load_proc: gl.Set_Proc_Address_Type) -> (ctx: GFX_Context, ok: bool) {
-  ctx = GFX_Context{}
+gfx_init :: proc(load_proc: gl.Set_Proc_Address_Type) -> (ctx: GFX_State, ok: bool) {
+  ctx = GFX_State{}
 
   gl.load_up_to(GL_VERSION_MAJOR, GL_VERSION_MINOR, load_proc)
 
@@ -86,6 +93,9 @@ gfx_init :: proc(load_proc: gl.Set_Proc_Address_Type) -> (ctx: GFX_Context, ok: 
     .UI_Texture   = gl.GetUniformLocation(ctx.ui_shader, "Texture"),
     .UI_ProjMatrix = gl.GetUniformLocation(ctx.ui_shader, "ProjMatrix"),
   }
+
+  ctx.render_buffer.vertices = make([]Render_Vertex, MAX_VERTEX_COUNT)
+  ctx.render_buffer.indices = make([]u32, MAX_VERTEX_COUNT)
 
   return ctx, true
 }
