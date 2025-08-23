@@ -19,7 +19,6 @@ App_State :: struct {
   running: bool,
 }
 
-
 app_init :: proc(ctx: ^App_State) -> bool {
   if !SDL.Init({.VIDEO}) {
     fmt.eprintln("Failed to initialize SDL")
@@ -36,7 +35,7 @@ app_init :: proc(ctx: ^App_State) -> bool {
   ctx.window = SDL.CreateWindow(
     "verde",
     640, 480,
-    { .RESIZABLE, .OPENGL }
+    { .RESIZABLE, .OPENGL, .TRANSPARENT, .BORDERLESS }
   )
 
   if ctx.window == nil {
@@ -61,13 +60,14 @@ app_init :: proc(ctx: ^App_State) -> bool {
   gfx_upload_proj(&ctx.gfx, ctx.viewport.x, ctx.viewport.y)
 
   SDL.GL_SetSwapInterval(0)
+
+  SDL.SetWindowMinimumSize(ctx.window, 280, 32)
   ctx.running = true
   return true
 }
 
 app_run :: proc(ctx: ^App_State) {
   event: SDL.Event
-
 
   handle_event :: #force_inline proc(ctx: ^App_State, event: SDL.Event) {
     #partial switch event.type {
@@ -105,19 +105,52 @@ app_run :: proc(ctx: ^App_State) {
       }
     }
 
-    gfx_clear({0,0,0,1})
+    gfx_clear({0, 0, 0, 0})
+
+
     gfx_begin_frame(gfx)
 
-    {
-      gfx_push_rect_rounded(
-        gfx,
-        0,
-        {200,200},
-        radii = {32, 0, 15, 0}
-      )
-    }
+    gfx_push_rect_rounded(
+      gfx,
+      0,
+      ctx.viewport,
+      color = [4]f32{0x28, 0x28, 0x28, 0xff}/255,
+      radii = 8
+    )
+    gfx_push_rect_rounded(
+      gfx,
+      1,
+      ctx.viewport-2,
+      color = [4]f32{0x13, 0x13, 0x13, 0xff}/255,
+      radii = 7
+    )
+
+    gfx_push_rect_rounded(
+      gfx,
+      {10,10},
+      15,
+      radii = 7.5,
+      color = [4]f32{0xcc, 0x24, 0x1d, 0xff}/255,
+    )
+    gfx_push_rect_rounded(
+      gfx,
+      {10 + 15 + 10,10},
+      15,
+      radii = 7.5,
+      color = [4]f32{0xd7, 0x99, 0x21, 0xff}/255,
+    )
+
+    gfx_push_rect_rounded(
+      gfx,
+      {10 + 15 + 20 + 15 ,10},
+      15,
+      radii = 7.5,
+      color = [4]f32{0x98, 0x97, 0x1a, 0xff}/255,
+    )
+
 
     gfx_end_frame(gfx)
+
     SDL.GL_SwapWindow(ctx.window)
   }
 

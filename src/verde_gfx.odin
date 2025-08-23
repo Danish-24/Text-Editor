@@ -104,10 +104,9 @@ gfx_init :: proc(load_proc: gl.Set_Proc_Address_Type) -> (ctx: GFX_State, ok: bo
     .UI_Texture   = gl.GetUniformLocation(ctx.ui_shader, "Texture"),
     .UI_ProjMatrix = gl.GetUniformLocation(ctx.ui_shader, "ProjMatrix"),
   }
-
+  
   ctx.render_buffer.vertices = make([^]Render_Vertex, MAX_VERTEX_COUNT)
   ctx.render_buffer.indices = make([^]u32, MAX_VERTEX_COUNT)
-
 
   return ctx, true
 }
@@ -191,11 +190,11 @@ gfx_push_triangle :: proc(
   }
 
   base_index := render_buffer.vtx_count
-  vptr := render_buffer.vertices
+  vertices := render_buffer.vertices
 
-  vptr[base_index + 0] = Render_Vertex{p0, col0, uv0, cir0}
-  vptr[base_index + 1] = Render_Vertex{p1, col1, uv1, cir1}
-  vptr[base_index + 2] = Render_Vertex{p2, col2, uv2, cir2}
+  vertices[base_index + 0] = Render_Vertex{p0, col0, uv0, cir0}
+  vertices[base_index + 1] = Render_Vertex{p1, col1, uv1, cir1}
+  vertices[base_index + 2] = Render_Vertex{p2, col2, uv2, cir2}
 
   iptr := render_buffer.indices
   iptr[render_buffer.idx_count + 0] = base_index + 0

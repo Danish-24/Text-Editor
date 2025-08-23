@@ -17,5 +17,5 @@ void main() {
     float alpha = 1.0 - smoothstep(r2 - edge_width, r2 + edge_width, dist2);
 
     vec4 base = Frag_Color;
-    Out_Color = vec4(Frag_UV, 0.0, alpha);
+    Out_Color = vec4(base.rgb, base.a * alpha);
 }
