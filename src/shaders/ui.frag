@@ -9,7 +9,7 @@ uniform sampler2D Texture;
 layout (location = 0) out vec4 Out_Color;
 
 void main() {
-    float dist2 = dot(Frag_CircCoords, Frag_CircCoords);
+    float dist2 = length(Frag_CircCoords);
 
     float r2 = 1.0;
 
