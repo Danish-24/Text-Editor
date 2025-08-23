@@ -10,12 +10,11 @@ BuildTarget :: enum {
   windows,
   linux,
 }
-
 when ODIN_OS == .Windows {
   EXE_NAME :: "verde.exe"
   TARGET :: BuildTarget.windows
 }
-else {
+else when ODIN_OS == .Linux {
   EXE_NAME :: "verde"
   TARGET :: BuildTarget.linux
 }

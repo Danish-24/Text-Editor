@@ -4,18 +4,19 @@ package verde
 import "core:fmt"
 import "core:time"
 
+// should be local to this file only
 import SDL "vendor:sdl3"
 
 Window_Handle :: ^SDL.Window
 
 App_State :: struct {
-	window: Window_Handle,
-	viewport: [2]f32,
+  window: Window_Handle,
+  viewport: [2]f32,
 
   frame_delta : f32,
-	gfx: GFX_State,
+  gfx: GFX_State,
 
-	running: bool,
+  running: bool,
 }
 
 
@@ -29,6 +30,8 @@ app_init :: proc(ctx: ^App_State) -> bool {
   SDL.GL_SetAttribute(SDL.GL_CONTEXT_MINOR_VERSION, 3)
   SDL.GL_SetAttribute(SDL.GL_CONTEXT_PROFILE_MASK, i32(SDL.GLProfile.CORE))
   SDL.GL_SetAttribute(SDL.GL_DOUBLEBUFFER, 1)
+  SDL.GL_SetAttribute(SDL.GL_MULTISAMPLEBUFFERS, 1)
+  SDL.GL_SetAttribute(SDL.GL_MULTISAMPLESAMPLES, 4)
 
   ctx.window = SDL.CreateWindow(
     "verde",
@@ -55,9 +58,9 @@ app_init :: proc(ctx: ^App_State) -> bool {
     fmt.eprintln("Failed to initialize graphics")
     return false
   }
+  gfx_upload_proj(&ctx.gfx, ctx.viewport.x, ctx.viewport.y)
 
   SDL.GL_SetSwapInterval(0)
-
   ctx.running = true
   return true
 }
@@ -65,13 +68,21 @@ app_init :: proc(ctx: ^App_State) -> bool {
 app_run :: proc(ctx: ^App_State) {
   event: SDL.Event
 
-  handle_event :: proc(ctx: ^App_State, event: SDL.Event) {
+
+  handle_event :: #force_inline proc(ctx: ^App_State, event: SDL.Event) {
     #partial switch event.type {
     case .WINDOW_RESIZED:
       w := event.window.data1
       h := event.window.data2
       ctx.viewport = {f32(w), f32(h)}
       gfx_resize_target(w, h)
+      gfx_upload_proj(&ctx.gfx, ctx.viewport.x, ctx.viewport.y)
+    case .KEY_DOWN:
+      if event.key.key == SDL.K_P {
+        @(static) wireframe := false
+        wireframe = !wireframe
+        gfx_wireframe(wireframe)
+      }
     }
   }
 
@@ -96,14 +107,15 @@ app_run :: proc(ctx: ^App_State) {
 
     gfx_clear({0,0,0,1})
     gfx_begin_frame(gfx)
-    gfx_upload_proj(gfx, ctx.viewport.x, ctx.viewport.y)
 
-    gfx_push_rect(
-      gfx,
-      pos = {0,0}, 
-      size = {200,200},
-      color = [4]f32{54, 106, 143, 255}/255
-    )
+    {
+      gfx_push_rect_rounded(
+        gfx,
+        0,
+        {200,200},
+        radii = {32, 0, 15, 0}
+      )
+    }
 
     gfx_end_frame(gfx)
     SDL.GL_SwapWindow(ctx.window)
