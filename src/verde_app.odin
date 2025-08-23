@@ -18,59 +18,6 @@ App_State :: struct {
 	running: bool,
 }
 
-hit_test_callback :: proc "c" (win: ^SDL.Window, area: ^SDL.Point, data: rawptr) -> SDL.HitTestResult {
-  ctx := cast(^App_State)data
-
-  x := f32(area.x)
-  y := f32(area.y)
-
-  // Define resize border thickness
-  border :f32= 8.0
-
-  w, h : i32
-  w = auto_cast ctx.viewport.x
-  h = auto_cast ctx.viewport.y
-
-  fw := f32(w)
-  fh := f32(h)
-
-  if x <= border && y <= border {
-    return .RESIZE_TOPLEFT
-  }
-  if x >= fw - border && y <= border {
-    return .RESIZE_TOPRIGHT
-  }
-  if x <= border && y >= fh - border {
-    return .RESIZE_BOTTOMLEFT
-  }
-  if x >= fw - border && y >= fh - border {
-    return .RESIZE_BOTTOMRIGHT
-  }
-
-  if y <= border {
-    return .RESIZE_TOP
-  }
-  if y >= fh - border {
-    return .RESIZE_BOTTOM
-  }
-  if x <= border {
-    return .RESIZE_LEFT
-  }
-  if x >= fw - border {
-    return .RESIZE_RIGHT
-  }
-  if y >= 0 && y < 32 {
-    return .DRAGGABLE
-  }
-
-  return .NORMAL
-}
-
-
-render_titlebar :: proc(ctx: ^App_State) {
-  titlebar_color := [4]f32{0.2, 0.2, 0.2, 1.0}
-  gfx_push_rect(&ctx.gfx, {0, 0}, {ctx.viewport.x, 32}, titlebar_color)
-}
 
 app_init :: proc(ctx: ^App_State) -> bool {
   if !SDL.Init({.VIDEO}) {
@@ -86,7 +33,7 @@ app_init :: proc(ctx: ^App_State) -> bool {
   ctx.window = SDL.CreateWindow(
     "verde",
     640, 480,
-    {.RESIZABLE, .OPENGL, .BORDERLESS}
+    { .RESIZABLE, .OPENGL }
   )
 
   if ctx.window == nil {
@@ -111,8 +58,6 @@ app_init :: proc(ctx: ^App_State) -> bool {
 
   SDL.GL_SetSwapInterval(0)
 
-  SDL.SetWindowHitTest(ctx.window, hit_test_callback, rawptr(ctx))
-
   ctx.running = true
   return true
 }
@@ -133,6 +78,8 @@ app_run :: proc(ctx: ^App_State) {
   time_now := SDL.GetPerformanceCounter();
   time_last := u64(0)
 
+  gfx := &ctx.gfx
+
   main_loop: for ctx.running {
     time_last = time_now
     time_now = SDL.GetPerformanceCounter()
@@ -148,13 +95,17 @@ app_run :: proc(ctx: ^App_State) {
     }
 
     gfx_clear({0,0,0,1})
-    gfx_begin_frame(&ctx.gfx)
-    gfx_upload_proj(&ctx.gfx, ctx.viewport.x, ctx.viewport.y)
+    gfx_begin_frame(gfx)
+    gfx_upload_proj(gfx, ctx.viewport.x, ctx.viewport.y)
 
-    // Render titlebar
-    render_titlebar(ctx)
+    gfx_push_rect(
+      gfx,
+      pos = {0,0}, 
+      size = {200,200},
+      color = [4]f32{54, 106, 143, 255}/255
+    )
 
-    gfx_end_frame(&ctx.gfx)
+    gfx_end_frame(gfx)
     SDL.GL_SwapWindow(ctx.window)
   }
 
