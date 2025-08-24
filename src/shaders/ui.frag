@@ -9,13 +9,11 @@ uniform sampler2D Texture;
 layout (location = 0) out vec4 Out_Color;
 
 void main() {
-    float dist2 = length(Frag_CircCoords);
+  float dist = length(Frag_CircCoords) - 1.0;
 
-    float r2 = 1.0;
+  float edge_width = fwidth(dist) * 0.5;
+  float alpha = 1.0 - smoothstep(-edge_width, edge_width, dist);
 
-    float edge_width = fwidth(dist2) * 0.5;
-    float alpha = 1.0 - smoothstep(r2 - edge_width, r2 + edge_width, dist2);
-
-    vec4 base = Frag_Color;
-    Out_Color = vec4(base.rgb, base.a * alpha);
+  vec4 base = Frag_Color * texture(Texture, Frag_UV);
+  Out_Color = vec4(base.rgb, base.a * alpha);
 }
