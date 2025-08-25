@@ -508,6 +508,15 @@ gfx_push_rect_rounded :: proc(
 }
 
 //=========================
+// Font rendering
+
+gfx_push_text :: proc(gfx: ^GFX_State, text: string) {
+
+}
+
+
+
+//=========================
 // Helpers
 //=========================
 

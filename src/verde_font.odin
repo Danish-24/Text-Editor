@@ -264,15 +264,6 @@ font_atlas_measure_text :: proc(gfx: ^GFX_State, font_atlas: ^Font_Atlas, text: 
   return width
 }
 
-//================================
-//    Rendering                   
-
-
-
-
-
-
-
 
 
 
