@@ -1,5 +1,6 @@
 package verde
 
+import "core:odin/ast"
 import "core:fmt"
 import "core:math"
 
@@ -196,6 +197,8 @@ GFX_State :: struct {
   texture_slots : [MAX_TEXTURES]Texture_Handle,
   num_textures : u32,
   texture_freelist : u32,
+
+  viewport: [2]i32
 }
 
 gfx_init :: proc(load_proc: gl.Set_Proc_Address_Type) -> (ctx: GFX_State, ok: bool) {
@@ -489,7 +492,8 @@ gfx_push_rect_rounded :: proc(
 }
 
 //=========================
-// Font rendering
+// Font rendering          
+
 
 gfx_push_text :: proc(
   gfx: ^GFX_State, 
@@ -564,7 +568,23 @@ gfx_resize_target :: proc(ctx : ^GFX_State, w, h : i32) {
   gl.Viewport(0, 0, w, h)
   proj := ortho_matrix(0, f32(w), f32(h), 0, -1.0, 100.0)
   gl.UniformMatrix4fv(ctx.uniform_loc[.UI_ProjMatrix], 1, gl.FALSE, &proj[0][0])
+  ctx.viewport = {w, h}
 }
+
+gfx_push_clip :: proc(ctx: ^GFX_State, rect: UI_Rect) {
+  gl.Enable(gl.SCISSOR_TEST)
+  gl.Scissor(
+    cast(i32) rect.min.x,
+    ctx.viewport.y - cast(i32) rect.max.y,
+    cast(i32) (rect.max.x - rect.min.x),
+    cast(i32) (rect.max.y - rect.min.y),
+  )
+}
+
+gfx_pop_clip :: proc(ctx: ^GFX_State) {
+  gl.Disable(gl.SCISSOR_TEST)
+}
+
 
 //=========================
 // Helpers

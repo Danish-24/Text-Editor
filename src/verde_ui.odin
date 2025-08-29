@@ -7,8 +7,15 @@ UI_BoxFlag :: enum {
   Invisible
 }
 
+UI_Rect :: struct {
+  min, max : vec2
+}
+
 UI_Handle :: i32
 UI_Box :: struct {
+
+  outer_rect, inner_rect : UI_Rect,
+
   parent:        UI_Handle,
   next_sibling : UI_Handle,
   first_child :  UI_Handle,
@@ -30,10 +37,10 @@ UI_SizeAxis :: struct {
   value: f32,
 }
 
-size_fixed :: #force_inline proc(val: f32) -> UI_SizeAxis { return {type = .Fixed, value = val} }
-size_perc  :: #force_inline proc(val: f32) -> UI_SizeAxis { return {type = .ParentPct, value = val} }
-size_fill  :: #force_inline proc()         -> UI_SizeAxis { return {type = .Fill, value = 0} }
-size_fit   :: #force_inline proc()         -> UI_SizeAxis { return {type = .Fit, value = 0}}
+size_fixed :: #force_inline proc(val: f32)     -> UI_SizeAxis { return {type = .Fixed, value = val} }
+size_perc  :: #force_inline proc(val: f32)     -> UI_SizeAxis { return {type = .ParentPct, value = val} }
+size_fill  :: #force_inline proc(val: f32 = 1) -> UI_SizeAxis { return {type = .Fill, value = val} }
+size_fit   :: #force_inline proc()             -> UI_SizeAxis { return {type = .Fit, value = 0}}
 
 UI_Padding :: struct {
   left, top, right, bottom: f32
@@ -78,9 +85,9 @@ ui_layout_begin :: proc(
   w, h : f32, 
   x:=f32(0), y:=f32(0),
   direction: UI_LayoutDir = .T_to_B,
-  padding: UI_Padding = {5, 5, 5, 5},
-  child_gap :f32= 5,
-  color: vec4=1.0,
+  padding: UI_Padding = {},
+  child_gap :f32= 0,
+  color: vec4=0,
   flags: UI_BoxFlags = {.Invisible}
 ) {
   _ctx.layout_dimensions = {w, h}
@@ -108,52 +115,6 @@ ui_layout_end :: proc() -> []UI_Box {
   ui_end()
 
   return _ctx.flat_array[:_ctx.box_count]
-}
-
-// Calculate available space for fill elements in parent
-@(private)
-_ui_calculate_fill_space :: proc(parent: ^UI_Box, exclude_child: UI_Handle = -1) -> vec2 {
-  available := vec2{
-    parent.resolved_size.x - parent.padding.left - parent.padding.right,
-    parent.resolved_size.y - parent.padding.top - parent.padding.bottom
-  }
-  
-  used_space := vec2{0, 0}
-  child_count := 0
-  
-  // Calculate space used by existing children
-  child_handle := parent.first_child
-  for child_handle >= 0 {
-    child := &_ctx.flat_array[child_handle]
-    if child_handle != exclude_child {
-      
-      // Only count non-fill sizes in the layout direction
-      if parent.layout_direction == .L_to_R {
-        if child.size.w.type != .Fill {
-          used_space.x += child.resolved_size.x
-        }
-        // For cross-axis, we don't subtract (Fill can expand to full height)
-      } else { // T_to_B
-        if child.size.h.type != .Fill {
-          used_space.y += child.resolved_size.y  
-        }
-        // For cross-axis, we don't subtract (Fill can expand to full width)
-      }
-      child_count += 1
-    }
-    child_handle = child.next_sibling
-  }
-  
-  // Account for gaps between children
-  if child_count > 0 {
-    if parent.layout_direction == .L_to_R {
-      used_space.x += parent.child_gap * f32(child_count)
-    } else {
-      used_space.y += parent.child_gap * f32(child_count)
-    }
-  }
-  
-  return available - used_space
 }
 
 ui_begin :: proc(config: UI_Config) -> UI_Handle {
@@ -195,7 +156,6 @@ ui_begin :: proc(config: UI_Config) -> UI_Handle {
 
     padding := parent.padding
     
-    // Handle ParentPct sizing
     if box.size.w.type == .ParentPct && parent.resolved_size.x > 0 {
       box.resolved_size.x = (parent.resolved_size.x - padding.left - padding.right) * box.size.w.value
     }
@@ -203,16 +163,16 @@ ui_begin :: proc(config: UI_Config) -> UI_Handle {
       box.resolved_size.y = (parent.resolved_size.y - padding.top - padding.bottom) * box.size.h.value
     }
     
-    // Handle Fill sizing immediately
-    if box.size.w.type == .Fill || box.size.h.type == .Fill {
-      available_space := _ui_calculate_fill_space(parent, result_idx)
-      
-      if box.size.w.type == .Fill {
-        box.resolved_size.x = max(0, available_space.x)
-      }
-      if box.size.h.type == .Fill {
-        box.resolved_size.y = max(0, available_space.y)
-      }
+    available_space := vec2{
+      parent.position.x + parent.resolved_size.x - parent.padding.right - cursor_position.x,
+      parent.position.y + parent.resolved_size.y - parent.padding.bottom - cursor_position.y,
+    }
+
+    if box.size.w.type == .Fill {
+      box.resolved_size.x = max(0, available_space.x * box.size.w.value)
+    }
+    if box.size.h.type == .Fill {
+      box.resolved_size.y = max(0, available_space.y * box.size.h.value)
     }
     
     cursor_position = box.position + {box.padding.left, box.padding.top}
@@ -288,6 +248,21 @@ ui_end :: proc() {
       cursor_position.x = current_box.position.x + current_box.resolved_size.x + parent.child_gap
       cursor_position.y = current_box.position.y
     }
+  }
+
+  current_box.outer_rect.min = current_box.position
+  current_box.outer_rect.max = current_box.position + current_box.resolved_size
+
+  current_box.inner_rect.min = current_box.outer_rect.min + {current_box.padding.left,current_box.padding.top}
+  current_box.inner_rect.max = current_box.outer_rect.max - {current_box.padding.right,current_box.padding.bottom}
+}
+
+ui_region_left :: proc() -> vec2 {
+  if _ctx.open_box < 0 { return {} }
+  box := _ctx.flat_array[_ctx.open_box]
+  return {
+    box.position.x + box.resolved_size.x - box.padding.right -  _ctx.cursor_position.x,
+    box.position.y + box.resolved_size.y - box.padding.bottom - _ctx.cursor_position.y,
   }
 }
 

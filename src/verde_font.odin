@@ -2,7 +2,6 @@ package verde
 
 import "core:fmt"
 import stbtt "vendor:stb/truetype"
-import kbtxt "vendor:kb_text_shape"
 
 Font :: struct {
   font_info : stbtt.fontinfo,

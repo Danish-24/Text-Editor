@@ -5,7 +5,6 @@ import "core:time"
 import "base:runtime"
 import "vendor:glfw"
 
-
 Window_Handle :: glfw.WindowHandle
 
 App_State :: struct {
@@ -36,6 +35,7 @@ app_init :: proc(ctx: ^App_State) -> bool {
     fmt.println("Failed to create window");
     return false 
   }
+
   
   glfw.MakeContextCurrent(ctx.window)
   glfw.SwapInterval(0)
@@ -79,6 +79,13 @@ app_init :: proc(ctx: ^App_State) -> bool {
     ctx.input.keys_current += {keycode} if action == glfw.PRESS else {}
     ctx.input.keys_repeat += {keycode} if action == glfw.REPEAT else {}
     ctx.input.keys_current -= {keycode} if action == glfw.RELEASE else {}
+  })
+
+  glfw.SetScrollCallback(ctx.window, proc "c" (window: Window_Handle, x, y: f64) {
+    context = runtime.default_context()
+    ctx := cast(^App_State) glfw.GetWindowUserPointer(window)
+
+    ctx.input.scroll = {f32(x), f32(y)}
   })
 
   ui_init(&ctx.ui)
@@ -127,7 +134,9 @@ app_run :: proc(ctx: ^App_State) {
     time_now  = cast(f32) glfw.GetTime()
     ctx.frame_delta = time_now - time_last;
 
-    gfx_clear(0)
+    gfx_clear(hex_color(0))
+    
+
 
     if is_key_down(ctx, .W) {
       gfx_wireframe(true)
@@ -135,30 +144,32 @@ app_run :: proc(ctx: ^App_State) {
       gfx_wireframe(false)
     }
 
+    height := font_atlas_height(&ctx.font)
+    if on_key_repeat(ctx, .Equal) {
+      font_atlas_resize_glyphs(gfx, &ctx.font, height + 5)
+    } 
+    else if on_key_repeat(ctx, .Minus) && height > 10{
+      font_atlas_resize_glyphs(gfx, &ctx.font, height - 5)
+    } 
+
+    
     ui_layout_begin(ctx.viewport.x, ctx.viewport.y, direction=.L_to_R)
   
     ui_begin({
       size = {
-        size_fit(),
+        size_fixed(200),
         size_fill(),
       },
-      color=hex_color(0xebdbc7),
-      radius = 10,
-      padding = {5,5,5,5},
-      child_gap = 5,
+      padding = {4,4,2,4},
+      child_gap = 4,
+      flags = {.Invisible}
     })
- 
-    for i in 0..<4 {
-      ui_begin({
-        size = {
-          size_fixed(128),
-          size_fixed(32),
-        },
-        color=hex_color(0x131313),
-        radius = 5,
-      })
-      ui_end()
-    }
+    ui_begin({
+      size = {size_fill(), size_fill()},
+      color = hex_color(0x282828),
+      radius = 5
+    })
+    ui_end()
 
     ui_end()
 
@@ -167,19 +178,31 @@ app_run :: proc(ctx: ^App_State) {
         size_fill(),
         size_fill(),
       },
-      color=hex_color(0xebdbc7),
-      radius = 10,
+      padding = {2,4,4,4},
+      child_gap = 4,
+      flags = {.Invisible},
+    })
+    panel_id := ui_begin({
+      size = {size_fill(), size_fixed(ui_region_left().y - 200)},
+      color = hex_color(0x282828),
       padding = {5,5,5,5},
-      child_gap = 5,
+      radius = 5
     })
     ui_end()
-
+    ui_begin({
+      size = {size_fill(), size_fill()},
+      color = hex_color(0x282828),
+      padding = {5,5,5,5},
+      radius = 5
+    })
+    ui_end()
+    ui_end()
 
     boxes := ui_layout_end()
 
     gfx_begin_frame(gfx)
 
-    for box in boxes {
+    for box, idx in boxes {
       if .Invisible in box.flags { continue }
       gfx_push_rect_rounded(
         gfx,
@@ -189,8 +212,30 @@ app_run :: proc(ctx: ^App_State) {
         box.radius,
       )
     }
-    gfx_end_frame(gfx)
+    
+    gfx_flush(gfx)
+    gfx_ready(gfx)
+    
+    panel := ui_get_box(panel_id)
 
+    @(static) offset : f32 = 0
+    offset += ctx.input.scroll.y * height * 4
+
+    
+    gfx_push_clip(gfx, panel.inner_rect)
+    gfx_push_text(
+        gfx,
+        #load("shaders/ui.frag"),
+        &ctx.font,
+        color=hex_color(0xebdbc7),
+        x = panel.inner_rect.min.x,
+        y = panel.inner_rect.min.y + offset,
+        x_advance = height * 0.5
+      )
+    gfx_end_frame(gfx)
+      
+    gfx_pop_clip(gfx)
+      
     glfw.SwapBuffers(window)
   }
 }
