@@ -2,6 +2,7 @@ package verde
 
 import "core:fmt"
 import stbtt "vendor:stb/truetype"
+import kbtxt "vendor:kb_text_shape"
 
 Font :: struct {
   font_info : stbtt.fontinfo,
@@ -191,7 +192,7 @@ font_atlas_expand :: proc(gfx: ^GFX_State, font_atlas: ^Font_Atlas) -> bool {
   font_atlas.atlas_width = new_width
   font_atlas.atlas_height = new_height
 
-  gfx_texture_delete(gfx, font_atlas.texture_id)
+  gfx_texture_unload(gfx, font_atlas.texture_id)
 
   texture := Texture{
     data = raw_data(font_atlas.atlas_data),
@@ -237,7 +238,7 @@ font_atlas_preload_ascii :: proc(gfx: ^GFX_State, font_atlas: ^Font_Atlas) {
 }
 
 font_atlas_destroy :: proc(gfx: ^GFX_State, font_atlas: ^Font_Atlas) {
-  gfx_texture_delete(gfx, font_atlas.texture_id)
+  gfx_texture_unload(gfx, font_atlas.texture_id)
   delete(font_atlas.atlas_data)
   delete(font_atlas.glyphs)
   font_atlas^ = {}
@@ -248,25 +249,50 @@ font_atlas_get_glyph :: proc(font_atlas: ^Font_Atlas, codepoint: rune) -> (Font_
   return glyph, exists
 }
 
-font_atlas_measure_text :: proc(gfx: ^GFX_State, font_atlas: ^Font_Atlas, text: string) -> f32 {
-  width: f32 = 0
-  
-  for codepoint in text {
+font_atlas_resize_glyphs :: proc(gfx: ^GFX_State, font_atlas: ^Font_Atlas, new_font_height: f32) -> bool {
+  using stbtt
+
+  old_scale := font_atlas.font.scale
+  new_scale := ScaleForPixelHeight(&font_atlas.font.font_info, new_font_height)
+
+  if abs(new_scale - old_scale) < 0.001 {
+    return true
+  }
+
+  font_atlas.font.scale = new_scale
+
+  ascent, descent, line_gap: i32
+  GetFontVMetrics(&font_atlas.font.font_info, &ascent, &descent, &line_gap)
+  font_atlas.font.ascent = f32(ascent) * font_atlas.font.scale
+  font_atlas.font.descent = f32(descent) * font_atlas.font.scale
+  font_atlas.font.line_gap = f32(line_gap) * font_atlas.font.scale
+
+  glyphs_to_regenerate := make([dynamic]rune, context.temp_allocator)
+
+  for codepoint in font_atlas.glyphs {
+    append(&glyphs_to_regenerate, codepoint)
+  }
+
+  for i in 0..<len(font_atlas.atlas_data) {
+    font_atlas.atlas_data[i] = 0
+  }
+
+  clear(&font_atlas.glyphs)
+
+  font_atlas.current_x = 1
+  font_atlas.current_y = 1
+  font_atlas.row_height = 0
+
+  for codepoint in glyphs_to_regenerate {
     if !font_atlas_add_glyph(gfx, font_atlas, codepoint) {
-      continue
-    }
-    
-    if glyph, ok := font_atlas_get_glyph(font_atlas, codepoint); ok {
-      width += glyph.xadvance
+      fmt.printf("Warning: Failed to regenerate glyph %c after resize\n", codepoint)
     }
   }
-  
-  return width
+
+  font_atlas_update(gfx, font_atlas)
+  return true
 }
 
-
-
-
-
-
-
+font_atlas_height :: #force_inline proc(atlas : ^Font_Atlas) -> f32 {
+  return atlas.font.ascent - atlas.font.descent + atlas.font.line_gap
+}

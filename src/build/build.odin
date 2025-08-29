@@ -42,6 +42,7 @@ main :: proc() {
       "build",
       "src",
       fmt.tprintf("-out:%v/%v", out_dir, EXE_NAME),
+      "-define:GLFW_SHARED=false",
     }
     run_cmd(..c[:])
   }

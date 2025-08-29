@@ -19,7 +19,7 @@ WHITE_TEXTURE :: 0
 @(rodata) FRAGMENT_SHADER := #load("shaders/ui.frag", cstring)
 
 Shader_Uniform :: enum u32 {
-  UI_Texture,
+  UI_Textures,
   UI_ProjMatrix,
 }
 
@@ -28,6 +28,7 @@ Render_Vertex :: struct {
   color    : vec4,
   uv       : vec2,
   circ_mask: vec2,
+  tex_id   : f32
 }
 
 Render_Buffer :: struct {
@@ -112,7 +113,7 @@ gfx_texture_upload :: proc(gfx: ^GFX_State, texture: Texture, type := TextureTyp
     gl.TexParameteriv(gl.TEXTURE_2D, gl.TEXTURE_SWIZZLE_RGBA, &swizzle[0])
   }
   
-  gl.TexImage2D(
+  gl.TexImage2D (
     gl.TEXTURE_2D,
     0, // level
     internal_format,
@@ -165,12 +166,8 @@ gfx_texture_update :: proc(gfx : ^GFX_State, id : u32, w, h : i32, channels: i32
   return true
 }
 
-gfx_texture_delete :: proc(gfx: ^GFX_State, id: u32) -> bool{
-  if id == WHITE_TEXTURE {
-    return false
-  }
-
-  if id >= gfx.num_textures {
+gfx_texture_unload :: proc(gfx: ^GFX_State, id: u32) -> bool{
+  if id == WHITE_TEXTURE || id >= gfx.num_textures {
     return false
   }
 
@@ -199,13 +196,12 @@ GFX_State :: struct {
   texture_slots : [MAX_TEXTURES]Texture_Handle,
   num_textures : u32,
   texture_freelist : u32,
-
-  bound_textures : [MAX_TEXTURES]bool,
-  current_texture : u32,
 }
 
 gfx_init :: proc(load_proc: gl.Set_Proc_Address_Type) -> (ctx: GFX_State, ok: bool) {
   ctx = GFX_State{}
+  ctx.render_buffer.vertices = make([^]Render_Vertex, MAX_VERTEX_COUNT, context.allocator)
+  ctx.render_buffer.indices = make([^]u32, MAX_VERTEX_COUNT, context.allocator)
 
   gl.load_up_to(GL_VERSION_MAJOR, GL_VERSION_MINOR, load_proc)
 
@@ -234,6 +230,9 @@ gfx_init :: proc(load_proc: gl.Set_Proc_Address_Type) -> (ctx: GFX_State, ok: bo
   gl.VertexAttribPointer(3, 2, gl.FLOAT, gl.FALSE, VTX_SIZE, cast(uintptr) offset_of(Render_Vertex, circ_mask))
   gl.EnableVertexAttribArray(3)
 
+  gl.VertexAttribPointer(4, 1, gl.FLOAT, gl.FALSE, VTX_SIZE, cast(uintptr) offset_of(Render_Vertex, tex_id))
+  gl.EnableVertexAttribArray(4)
+
   // Index Buffer
   gl.GenBuffers(1, &ctx.ui_ibo)
   gl.BindBuffer(gl.ELEMENT_ARRAY_BUFFER, ctx.ui_ibo)
@@ -258,14 +257,15 @@ gfx_init :: proc(load_proc: gl.Set_Proc_Address_Type) -> (ctx: GFX_State, ok: bo
   gl.UseProgram(ctx.ui_shader)
 
   ctx.uniform_loc = {
-    .UI_Texture   = gl.GetUniformLocation(ctx.ui_shader, "Texture"),
+    .UI_Textures   = gl.GetUniformLocation(ctx.ui_shader, "Textures"),
     .UI_ProjMatrix = gl.GetUniformLocation(ctx.ui_shader, "ProjMatrix"),
   }
-  
-  ctx.render_buffer.vertices = make([^]Render_Vertex, MAX_VERTEX_COUNT, context.allocator)
-  ctx.render_buffer.indices = make([^]u32, MAX_VERTEX_COUNT, context.allocator)
-  
-  
+
+  samplers := [MAX_TEXTURES]i32 {}
+  for i in 0..<MAX_TEXTURES { samplers[i] = i32(i) } 
+
+  gl.Uniform1iv(ctx.uniform_loc[.UI_Textures], MAX_TEXTURES, &samplers[0])
+
   white_pixel := [4]u8{255, 255, 255, 255}
   texture := Texture {
     width = 1,
@@ -273,7 +273,6 @@ gfx_init :: proc(load_proc: gl.Set_Proc_Address_Type) -> (ctx: GFX_State, ok: bo
     channels = 4,
     data = &white_pixel[0]
   }
-
   gfx_texture_upload(&ctx, texture)
 
   return ctx, true
@@ -284,7 +283,7 @@ gfx_clear :: proc(color: vec4 = {0.1, 0.1, 0.1, 1.0}) {
   gl.Clear(gl.DEPTH_BUFFER_BIT | gl.COLOR_BUFFER_BIT)
 }
 
-gfx_begin_frame :: proc(ctx: ^GFX_State, texture_id : u32 = WHITE_TEXTURE) {
+gfx_begin_frame :: proc(ctx: ^GFX_State) {
   gfx_ready(ctx)
 
   gl.UseProgram(ctx.ui_shader)
@@ -292,26 +291,6 @@ gfx_begin_frame :: proc(ctx: ^GFX_State, texture_id : u32 = WHITE_TEXTURE) {
 
   gl.BindBuffer(gl.ARRAY_BUFFER, ctx.ui_vbo)
   gl.BindBuffer(gl.ELEMENT_ARRAY_BUFFER, ctx.ui_ibo)
-
-  gfx_set_texture(ctx, texture_id)
-}
-
-gfx_set_texture :: proc(ctx: ^GFX_State, texture_id: u32) {
-  id := texture_id
-  if id >= ctx.num_textures {
-    id = WHITE_TEXTURE
-  }
-
-  if ctx.current_texture != id {
-    ctx.current_texture = id
-    
-    handle := &ctx.texture_slots[id]
-    if handle.gl_id != 0 {
-      gl.ActiveTexture(gl.TEXTURE0)
-      gl.BindTexture(gl.TEXTURE_2D, handle.gl_id)
-      gl.Uniform1i(ctx.uniform_loc[.UI_Texture], 0)
-    }
-  }
 }
 
 gfx_end_frame :: proc(ctx: ^GFX_State) {
@@ -326,19 +305,12 @@ gfx_ready :: proc(ctx: ^GFX_State) {
 gfx_flush :: proc(ctx: ^GFX_State) {
   using ctx
 
-  handle := &texture_slots[current_texture]
-  if handle.gl_id != 0 {
-    gl.ActiveTexture(gl.TEXTURE0)
-    gl.BindTexture(gl.TEXTURE_2D, handle.gl_id)
-    gl.Uniform1i(uniform_loc[.UI_Texture], 0)
-  }
-
   gl.BufferSubData(gl.ARRAY_BUFFER, 0, cast(int) render_buffer.vtx_count * VTX_SIZE, render_buffer.vertices)
   gl.BufferSubData(gl.ELEMENT_ARRAY_BUFFER, 0, cast(int) render_buffer.idx_count * size_of(u32), render_buffer.indices)
   gl.DrawElements(gl.TRIANGLES, cast(i32) render_buffer.idx_count, gl.UNSIGNED_INT, nil)
 }
 
-gfx_push_rect :: proc(ctx : ^GFX_State, pos, size : vec2, color : [4]vec4 = 1.0, uv : vec4 = {0,0,1,1}) {
+gfx_push_rect :: proc(ctx : ^GFX_State, pos, size : vec2, color : [4]vec4 = 1.0, uv : vec4 = {0,0,1,1}, tex_id : u32 = 0) {
   using ctx
   if render_buffer.vtx_count + 4 > MAX_VERTEX_COUNT || render_buffer.idx_count + 6 > MAX_VERTEX_COUNT {
     gfx_flush(ctx)
@@ -353,10 +325,13 @@ gfx_push_rect :: proc(ctx : ^GFX_State, pos, size : vec2, color : [4]vec4 = 1.0,
   p2 := pos + (vec2{size.x, size.y})
   p3 := pos + (vec2{0, size.y})
 
-  render_buffer.vertices[vc + 0] = Render_Vertex{p0, color[0], uv.xy, 0}
-  render_buffer.vertices[vc + 1] = Render_Vertex{p1, color[1], uv.zy, 0}
-  render_buffer.vertices[vc + 2] = Render_Vertex{p2, color[2], uv.zw, 0}
-  render_buffer.vertices[vc + 3] = Render_Vertex{p3, color[3], uv.xw, 0}
+
+  f_tex_id := f32(tex_id)
+
+  render_buffer.vertices[vc + 0] = Render_Vertex{p0, color[0], uv.xy, 0, f_tex_id}
+  render_buffer.vertices[vc + 1] = Render_Vertex{p1, color[1], uv.zy, 0, f_tex_id}
+  render_buffer.vertices[vc + 2] = Render_Vertex{p2, color[2], uv.zw, 0, f_tex_id}
+  render_buffer.vertices[vc + 3] = Render_Vertex{p3, color[3], uv.xw, 0, f_tex_id}
 
   render_buffer.indices[ic + 0] = vc + 0
   render_buffer.indices[ic + 1] = vc + 1
@@ -375,8 +350,10 @@ gfx_push_triangle :: proc(
   col0, col1, col2 : vec4,
   uv0, uv1, uv2 : vec2,
   cir0, cir1, cir2 : vec2,
+  tex_id : u32 = 0,
 ) {
   using ctx
+  f_tex_id := f32(tex_id)
 
   if render_buffer.vtx_count + 3 > MAX_VERTEX_COUNT || render_buffer.idx_count + 3 > MAX_VERTEX_COUNT {
     gfx_flush(ctx)
@@ -386,9 +363,9 @@ gfx_push_triangle :: proc(
   base_index := render_buffer.vtx_count
   vertices := render_buffer.vertices
 
-  vertices[base_index + 0] = Render_Vertex{p0, col0, uv0, cir0}
-  vertices[base_index + 1] = Render_Vertex{p1, col1, uv1, cir1}
-  vertices[base_index + 2] = Render_Vertex{p2, col2, uv2, cir2}
+  vertices[base_index + 0] = Render_Vertex{p0, col0, uv0, cir0, f_tex_id}
+  vertices[base_index + 1] = Render_Vertex{p1, col1, uv1, cir1, f_tex_id}
+  vertices[base_index + 2] = Render_Vertex{p2, col2, uv2, cir2, f_tex_id}
 
   iptr := render_buffer.indices
   iptr[render_buffer.idx_count + 0] = base_index + 0
@@ -405,8 +382,10 @@ gfx_push_rect_rounded :: proc(
   color : [4]f32 = 1.0,
   radii : [4]f32 = 10.0,
   uv : [4]f32 = {0,0,1,1},
+  tex_id : u32 = 0,
 ) {
   using ctx
+  f_tex_id := f32(tex_id)
   if size.x <= 0.0 || size.y <= 0.0 { return }
   
   radii := radii
@@ -478,6 +457,7 @@ gfx_push_rect_rounded :: proc(
     v.color = color
     v.uv = local_uv * (uv.zw - uv.xy) + uv.xy
     v.circ_mask = {0,0}
+    v.tex_id = f_tex_id
   }
 
   for i in 1..<num_vertices - 1 {
@@ -502,7 +482,8 @@ gfx_push_rect_rounded :: proc(
       p1, p2, p3,
       color, color, color,
       (p1 - pos) / size * (uv.zw - uv.xy) + uv.xy, (p2 - pos) / size * (uv.zw - uv.xy) + uv.xy, (p3 - pos) / size * (uv.zw - uv.xy) + uv.xy,
-      {1,1}, {0, 1},{1, 0}
+      {1,1}, {0, 1},{1, 0},
+      tex_id
     )
   }
 }
@@ -510,20 +491,83 @@ gfx_push_rect_rounded :: proc(
 //=========================
 // Font rendering
 
-gfx_push_text :: proc(gfx: ^GFX_State, text: string) {
+gfx_push_text :: proc(
+  gfx: ^GFX_State, 
+  text: string, 
+  font_atlas: ^Font_Atlas, 
+  x: f32 = 0, 
+  y: f32 = 0, 
+  tab_width: u32 = 4, 
+  color: vec4 = 1.0, 
+  x_advance: f32 = -1.0,
+) -> (cx: f32, cy: f32) {
+  if len(text) == 0 {
+    return x, y
+  }
+  cursor_x := x
+  cursor_y := y
+  char_width: f32
+  line_height: f32
+  space_glyph, space_ok := font_atlas_get_glyph(font_atlas, ' ')
+  char_width = space_ok ? space_glyph.xadvance : font_atlas.font.scale * 8
+  line_height = font_atlas_height(font_atlas)
+  tab_advance := (x_advance > 0 ? x_advance : char_width) * f32(tab_width)
 
+  error_char_size := line_height * 0.2
+
+  for codepoint, idx in text {
+    switch codepoint {
+    case '\n':
+      cursor_x = x
+      cursor_y += line_height
+      continue
+    case '\t':
+      cursor_x += tab_advance
+      continue
+    case '\r':
+      cursor_x = x
+      continue
+    }
+    glyph, glyph_ok := font_atlas_get_glyph(font_atlas, codepoint)
+    if !glyph_ok {
+      font_atlas_add_glyphs_from_string(gfx, font_atlas, text)
+      font_atlas_update(gfx, font_atlas)
+      glyph, glyph_ok = font_atlas_get_glyph(font_atlas, codepoint)
+    }
+
+    glyph_x := cursor_x + (glyph_ok ? glyph.xoff : 0)
+    glyph_y := cursor_y + (glyph_ok ? glyph.yoff + font_atlas.font.ascent : font_atlas.font.ascent - error_char_size)
+    glyph_width := glyph_ok ? f32(glyph.x1 - glyph.x0) : char_width
+    glyph_height := glyph_ok ? f32(glyph.y1 - glyph.y0) : error_char_size
+    u0 := glyph_ok ? f32(glyph.x0) / f32(font_atlas.atlas_width) : 0
+    v0 := glyph_ok ? f32(glyph.y0) / f32(font_atlas.atlas_height) : 0
+    u1 := glyph_ok ? f32(glyph.x1) / f32(font_atlas.atlas_width) : 1
+    v1 := glyph_ok ? f32(glyph.y1) / f32(font_atlas.atlas_height) : 1
+    render_color := glyph_ok ? color : vec4{1, 0, 0, 1}
+    texture_id := glyph_ok ? font_atlas.texture_id : WHITE_TEXTURE
+    advance := glyph_ok ? glyph.xadvance : char_width
+
+    gfx_push_rect(
+      gfx, 
+      {glyph_x, glyph_y}, 
+      {glyph_width, glyph_height},
+      uv = {u0, v0, u1, v1},
+      color = render_color,
+      tex_id = texture_id
+    )
+    cursor_x += x_advance > 0 ? x_advance : advance
+  }
+  return cursor_x, cursor_y
 }
 
-
+gfx_resize_target :: proc(ctx : ^GFX_State, w, h : i32) {
+  gl.Viewport(0, 0, w, h)
+  proj := ortho_matrix(0, f32(w), f32(h), 0, -1.0, 100.0)
+  gl.UniformMatrix4fv(ctx.uniform_loc[.UI_ProjMatrix], 1, gl.FALSE, &proj[0][0])
+}
 
 //=========================
 // Helpers
-//=========================
-
-gfx_upload_proj :: proc(ctx: ^GFX_State, width, height : f32) {
-  proj := ortho_matrix(0, width, height, 0, -1.0, 100.0)
-  gl.UniformMatrix4fv(ctx.uniform_loc[.UI_ProjMatrix], 1, gl.FALSE, &proj[0][0])
-}
 
 ortho_matrix :: proc(left, right, bottom, top: f32, near, far: f32) -> mat4x4 {
   result: mat4x4 = 0
@@ -538,14 +582,7 @@ ortho_matrix :: proc(left, right, bottom, top: f32, near, far: f32) -> mat4x4 {
   return result
 }
 
-gfx_resize_target :: proc(w, h : i32) {
-  gl.Viewport(0, 0, w, h)
-}
 gfx_wireframe :: proc(on : bool) { gl.PolygonMode(gl.FRONT_AND_BACK, on ? gl.LINE : gl.FILL) }
-
-// ===============================================
-// Utility procedures
-// ===============================================
 
 quad_gradient :: proc(col1, col2: vec4, angle_deg: f32) -> [4]vec4 {
   radian := angle_deg * math.PI / 180 + math.PI / 4

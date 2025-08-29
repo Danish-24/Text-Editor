@@ -2,31 +2,24 @@
           Verde
 ------------------------------
 
-Verde is a lightweight text editor written in Odin with SDL3 + OpenGL for rendering.
-This is an early-stage project.
-
+Verde is a lightweight text editor written in Odin with GPU 
+accelerated rendering. *This is an early-stage project*
 
 ------------------
 Build Instructions
 ------------------
 Prerequisites:
 - Odin compiler
-- SDL3 installed on your system
-- OpenGL 3.3 or higher runtime available
+- OpenGL 3.3 or higher compatible GPU
 
 Linux / macOS:
-1. Install SDL3
-  - I dont think SDL3 is available
-    in most of package managers, so
-    might have to build from source.
-
+1. Install glfw3 with your package manager 
+2. Compile the stb bindings for Odin in vendor
 2. Build:
        ./build.sh
 
 Windows:
-1. Get SDL3:
-   - Either install it system-wide, OR
-   - Place SDL3.dll next to the compiled verde.exe binary
+1. Compile the stb bindings for Odin in vendor
 2. Build:
       ./build.bat
 
