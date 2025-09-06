@@ -6,6 +6,10 @@ import "core:math"
 
 import gl "vendor:OpenGL"
 
+
+//////////////////////////////////
+// ~geb: Constants
+
 GL_VERSION_MAJOR :: 3
 GL_VERSION_MINOR :: 3
 
@@ -19,16 +23,19 @@ WHITE_TEXTURE :: 0
 @(rodata) VERTEX_SHADER   := #load("shaders/ui.vert", cstring)
 @(rodata) FRAGMENT_SHADER := #load("shaders/ui.frag", cstring)
 
+//////////////////////////////////
+// ~geb: Types
+
 Shader_Uniform :: enum u32 {
   UI_Textures,
   UI_ProjMatrix,
 }
 
 Render_Vertex :: struct {
-  position : vec2,
-  color    : vec4,
-  uv       : vec2,
-  circ_mask: vec2,
+  position : vec2_f32,
+  color    : vec4_f32,
+  uv       : vec2_f32,
+  circ_mask: vec2_f32,
   tex_id   : f32
 }
 
@@ -54,6 +61,24 @@ TextureType :: enum {
   Normal,
   Bitmap
 }
+
+GFX_State :: struct {
+  ui_vao, ui_vbo, ui_ibo : u32,
+  ui_shader              : u32,
+  uniform_loc            : [Shader_Uniform]i32,
+
+  render_buffer          : Render_Buffer,
+
+  texture_slots : [MAX_TEXTURES]Texture_Handle,
+  num_textures : u32,
+  texture_freelist : u32,
+
+  viewport: [2]i32
+}
+
+
+//////////////////////////////////
+// ~geb: Texture loading procs
 
 gfx_texture_upload :: proc(gfx: ^GFX_State, texture: Texture, type := TextureType.Normal) -> u32 {
   if texture.data == nil || texture.width <= 0 || texture.height <= 0 || texture.channels < 1 || texture.channels > 4 {
@@ -187,19 +212,8 @@ gfx_texture_unload :: proc(gfx: ^GFX_State, id: u32) -> bool{
   return true
 }
 
-GFX_State :: struct {
-  ui_vao, ui_vbo, ui_ibo : u32,
-  ui_shader              : u32,
-  uniform_loc            : [Shader_Uniform]i32,
-
-  render_buffer          : Render_Buffer,
-
-  texture_slots : [MAX_TEXTURES]Texture_Handle,
-  num_textures : u32,
-  texture_freelist : u32,
-
-  viewport: [2]i32
-}
+//////////////////////////////////
+// ~geb: Interface procs
 
 gfx_init :: proc(load_proc: gl.Set_Proc_Address_Type) -> (ctx: GFX_State, ok: bool) {
   ctx = GFX_State{}
@@ -281,13 +295,13 @@ gfx_init :: proc(load_proc: gl.Set_Proc_Address_Type) -> (ctx: GFX_State, ok: bo
   return ctx, true
 }
 
-gfx_clear :: proc(color: vec4 = {0.1, 0.1, 0.1, 1.0}) {
+gfx_clear :: proc(color: vec4_f32 = {0.1, 0.1, 0.1, 1.0}) {
   gl.ClearColor(color.r, color.g, color.b, color.a)
   gl.Clear(gl.DEPTH_BUFFER_BIT | gl.COLOR_BUFFER_BIT)
 }
 
 gfx_begin_frame :: proc(ctx: ^GFX_State) {
-  gfx_ready(ctx)
+  gfx_prep_frame(ctx)
 
   gl.UseProgram(ctx.ui_shader)
   gl.BindVertexArray(ctx.ui_vao)
@@ -300,7 +314,7 @@ gfx_end_frame :: proc(ctx: ^GFX_State) {
   gfx_flush(ctx)
 }
 
-gfx_ready :: proc(ctx: ^GFX_State) {
+gfx_prep_frame :: proc(ctx: ^GFX_State) {
   ctx.render_buffer.vtx_count = 0
   ctx.render_buffer.idx_count = 0
 }
@@ -313,20 +327,20 @@ gfx_flush :: proc(ctx: ^GFX_State) {
   gl.DrawElements(gl.TRIANGLES, cast(i32) render_buffer.idx_count, gl.UNSIGNED_INT, nil)
 }
 
-gfx_push_rect :: proc(ctx : ^GFX_State, pos, size : vec2, color : [4]vec4 = 1.0, uv : vec4 = {0,0,1,1}, tex_id : u32 = 0) {
+gfx_push_rect :: proc(ctx : ^GFX_State, pos, size : vec2_f32, color:[4]vec4_f32 = 1.0, uv:vec4_f32= {0,0,1,1}, tex_id : u32 = 0) {
   using ctx
   if render_buffer.vtx_count + 4 > MAX_VERTEX_COUNT || render_buffer.idx_count + 6 > MAX_VERTEX_COUNT {
     gfx_flush(ctx)
-    gfx_ready(ctx)
+    gfx_prep_frame(ctx)
   }
 
   vc := render_buffer.vtx_count
   ic := render_buffer.idx_count
 
   p0 := pos
-  p1 := pos + (vec2{size.x, 0})
-  p2 := pos + (vec2{size.x, size.y})
-  p3 := pos + (vec2{0, size.y})
+  p1 := pos + (vec2_f32{size.x, 0})
+  p2 := pos + (vec2_f32{size.x, size.y})
+  p3 := pos + (vec2_f32{0, size.y})
 
 
   f_tex_id := f32(tex_id)
@@ -349,10 +363,10 @@ gfx_push_rect :: proc(ctx : ^GFX_State, pos, size : vec2, color : [4]vec4 = 1.0,
 
 gfx_push_triangle :: proc(
   ctx : ^GFX_State,
-  p0, p1, p2 : vec2,
-  col0, col1, col2 : vec4,
-  uv0, uv1, uv2 : vec2,
-  cir0, cir1, cir2 : vec2,
+  p0, p1, p2 : vec2_f32,
+  col0, col1, col2 : vec4_f32,
+  uv0, uv1, uv2 : vec2_f32,
+  cir0, cir1, cir2 : vec2_f32,
   tex_id : u32 = 0,
 ) {
   using ctx
@@ -360,7 +374,7 @@ gfx_push_triangle :: proc(
 
   if render_buffer.vtx_count + 3 > MAX_VERTEX_COUNT || render_buffer.idx_count + 3 > MAX_VERTEX_COUNT {
     gfx_flush(ctx)
-    gfx_ready(ctx)
+    gfx_prep_frame(ctx)
   }
 
   base_index := render_buffer.vtx_count
@@ -445,7 +459,7 @@ gfx_push_rect_rounded :: proc(
 
   if v_slots < num_vertices || i_slots < (num_vertices - 2) * 3 {
     gfx_flush(ctx)
-    gfx_ready(ctx)
+    gfx_prep_frame(ctx)
   }
   
   base_index := render_buffer.vtx_count
@@ -491,9 +505,8 @@ gfx_push_rect_rounded :: proc(
   }
 }
 
-//=========================
-// Font rendering          
-
+//////////////////////////////////
+// ~geb: Font rendering
 
 gfx_push_text :: proc(
   gfx: ^GFX_State, 
@@ -502,65 +515,104 @@ gfx_push_text :: proc(
   x: f32 = 0, 
   y: f32 = 0, 
   tab_width: u32 = 4, 
-  color: vec4 = 1.0, 
-  x_advance: f32 = -1.0,
+  color: vec4_f32 = 1.0, 
+  monospace_advance: f32 = -1.0
 ) -> (cx: f32, cy: f32) {
   if len(text) == 0 {
     return x, y
   }
+
+  line_height := font_atlas_height(font_atlas)
+  ascent := font_atlas.font.ascent
+  
+  space_glyph, space_ok := font_atlas_get_glyph(font_atlas, ' ')
+  fallback_advance := space_ok ? space_glyph.xadvance : font_atlas.font.scale * 8
+  
+  tab_advance := (monospace_advance > 0 ? monospace_advance : fallback_advance) * f32(tab_width)
+  
+  error_char_size := line_height * 0.2
+  error_y_offset := ascent - error_char_size
+  
+  missing_glyphs := make([dynamic]rune, 0, 32, context.temp_allocator)
+  
   cursor_x := x
   cursor_y := y
-  char_width: f32
-  line_height: f32
-  space_glyph, space_ok := font_atlas_get_glyph(font_atlas, ' ')
-  char_width = space_ok ? space_glyph.xadvance : font_atlas.font.scale * 8
-  line_height = font_atlas_height(font_atlas)
-  tab_advance := (x_advance > 0 ? x_advance : char_width) * f32(tab_width)
-
-  error_char_size := line_height * 0.2
-
-  for codepoint, idx in text {
+  
+  for codepoint in text {
+    switch codepoint {
+    case '\n', '\t', '\r':
+      continue
+    case:
+      if codepoint not_in font_atlas.glyphs {
+        append(&missing_glyphs, codepoint)
+      }
+    }
+  }
+  
+  if len(missing_glyphs) > 0 {
+    unique_missing := make(map[rune]bool, len(missing_glyphs), context.temp_allocator)
+    for glyph in missing_glyphs {
+      unique_missing[glyph] = true
+    }
+    
+    for glyph in unique_missing {
+      font_atlas_add_glyph(gfx, font_atlas, glyph)
+    }
+    
+    font_atlas_update(gfx, font_atlas)
+  }
+  
+  atlas_width_f32 := f32(font_atlas.atlas_width)
+  atlas_height_f32 := f32(font_atlas.atlas_height)
+  
+  for codepoint in text {
     switch codepoint {
     case '\n':
       cursor_x = x
       cursor_y += line_height
       continue
+      
     case '\t':
       cursor_x += tab_advance
       continue
+      
     case '\r':
       cursor_x = x
       continue
     }
-    glyph, glyph_ok := font_atlas_get_glyph(font_atlas, codepoint)
+    
+    glyph, glyph_ok := font_atlas.glyphs[codepoint]
+
+    glyph_color := color
     if !glyph_ok {
-      font_atlas_add_glyphs_from_string(gfx, font_atlas, text)
-      font_atlas_update(gfx, font_atlas)
-      glyph, glyph_ok = font_atlas_get_glyph(font_atlas, codepoint)
+      glyph, glyph_ok = font_atlas.glyphs['?']
+      glyph_color = vec4_f32{1,0,0,1}
+    }
+    
+    glyph_x := cursor_x + glyph.xoff
+    glyph_y := cursor_y + glyph.yoff + ascent
+    glyph_width := f32(glyph.x1 - glyph.x0)
+    glyph_height := f32(glyph.y1 - glyph.y0)
+
+    if glyph_width > 0 && glyph_height > 0 {
+      u0 := f32(glyph.x0) / atlas_width_f32
+      v0 := f32(glyph.y0) / atlas_height_f32
+      u1 := f32(glyph.x1) / atlas_width_f32
+      v1 := f32(glyph.y1) / atlas_height_f32
+
+      gfx_push_rect(
+        gfx, 
+        {glyph_x, glyph_y}, 
+        {glyph_width, glyph_height},
+        uv = {u0, v0, u1, v1},
+        color = glyph_color,
+        tex_id = font_atlas.texture_id
+      )
     }
 
-    glyph_x := cursor_x + (glyph_ok ? glyph.xoff : 0)
-    glyph_y := cursor_y + (glyph_ok ? glyph.yoff + font_atlas.font.ascent : font_atlas.font.ascent - error_char_size)
-    glyph_width := glyph_ok ? f32(glyph.x1 - glyph.x0) : char_width
-    glyph_height := glyph_ok ? f32(glyph.y1 - glyph.y0) : error_char_size
-    u0 := glyph_ok ? f32(glyph.x0) / f32(font_atlas.atlas_width) : 0
-    v0 := glyph_ok ? f32(glyph.y0) / f32(font_atlas.atlas_height) : 0
-    u1 := glyph_ok ? f32(glyph.x1) / f32(font_atlas.atlas_width) : 1
-    v1 := glyph_ok ? f32(glyph.y1) / f32(font_atlas.atlas_height) : 1
-    render_color := glyph_ok ? color : vec4{1, 0, 0, 1}
-    texture_id := glyph_ok ? font_atlas.texture_id : WHITE_TEXTURE
-    advance := glyph_ok ? glyph.xadvance : char_width
-
-    gfx_push_rect(
-      gfx, 
-      {glyph_x, glyph_y}, 
-      {glyph_width, glyph_height},
-      uv = {u0, v0, u1, v1},
-      color = render_color,
-      tex_id = texture_id
-    )
-    cursor_x += x_advance > 0 ? x_advance : advance
+    cursor_x += monospace_advance > 0 ? monospace_advance : glyph.xadvance
   }
+  
   return cursor_x, cursor_y
 }
 
@@ -571,26 +623,35 @@ gfx_resize_target :: proc(ctx : ^GFX_State, w, h : i32) {
   ctx.viewport = {w, h}
 }
 
-gfx_push_clip :: proc(ctx: ^GFX_State, rect: UI_Rect) {
+gfx_push_clip :: proc(ctx: ^GFX_State, min, max: vec2_f32) {
+  if ctx.render_buffer.vtx_count > 0 {
+    gfx_flush(ctx)
+    gfx_prep_frame(ctx)
+  }
   gl.Enable(gl.SCISSOR_TEST)
   gl.Scissor(
-    cast(i32) rect.min.x,
-    ctx.viewport.y - cast(i32) rect.max.y,
-    cast(i32) (rect.max.x - rect.min.x),
-    cast(i32) (rect.max.y - rect.min.y),
+    cast(i32) min.x,
+    ctx.viewport.y - cast(i32) max.y,
+    cast(i32) (max.x - min.x),
+    cast(i32) (max.y - min.y),
   )
 }
 
 gfx_pop_clip :: proc(ctx: ^GFX_State) {
+  if ctx.render_buffer.vtx_count > 0 {
+    gfx_flush(ctx)
+    gfx_prep_frame(ctx)
+  }
+
   gl.Disable(gl.SCISSOR_TEST)
 }
 
 
-//=========================
-// Helpers
+//////////////////////////////////
+// ~geb: Helpers
 
-ortho_matrix :: proc(left, right, bottom, top: f32, near, far: f32) -> mat4x4 {
-  result: mat4x4 = 0
+ortho_matrix :: proc(left, right, bottom, top: f32, near, far: f32) -> mat4x4_f32 {
+  result: mat4x4_f32 = 0
   result[0][0] =  2.0 / (right - left)
   result[1][1] =  2.0 / (top - bottom)
   result[2][2] = -2.0 / (far - near)
@@ -604,7 +665,7 @@ ortho_matrix :: proc(left, right, bottom, top: f32, near, far: f32) -> mat4x4 {
 
 gfx_wireframe :: proc(on : bool) { gl.PolygonMode(gl.FRONT_AND_BACK, on ? gl.LINE : gl.FILL) }
 
-quad_gradient :: proc(col1, col2: vec4, angle_deg: f32) -> [4]vec4 {
+quad_gradient :: proc(col1, col2: vec4_f32, angle_deg: f32) -> [4]vec4_f32 {
   radian := angle_deg * math.PI / 180 + math.PI / 4
 
   sin_val := math.sin(radian)
@@ -623,14 +684,14 @@ quad_gradient :: proc(col1, col2: vec4, angle_deg: f32) -> [4]vec4 {
   }
 }
 
-hex_color :: proc(hex: u32be) -> vec4 {
+hex_color :: proc(hex: u32be) -> vec4_f32 {
   r := f32((hex >> 16) & 0xFF) / 255.0
   g := f32((hex >> 8) & 0xFF) / 255.0
   b := f32(hex & 0xFF) / 255.0
   return {r, g, b, 1.0}
 }
 
-hex_color_rgba :: proc(hex: u32be) -> vec4 {
+hex_color_rgba :: proc(hex: u32be) -> vec4_f32 {
   r := f32((hex >> 24) & 0xFF) / 255.0
   g := f32((hex >> 16) & 0xFF) / 255.0  
   b := f32((hex >> 8) & 0xFF)  / 255.0

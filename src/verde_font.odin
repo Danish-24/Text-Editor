@@ -47,8 +47,8 @@ font_atlas_create :: proc(gfx: ^GFX_State, data: []u8, size : i32 = 512, font_he
 
   atlas.atlas_width = size
   atlas.atlas_height = size
-  atlas.atlas_data = make([]u8, size * size)
-  atlas.glyphs = make(map[rune]Font_Atlas_Glyph)
+  atlas.atlas_data = make([]u8, size * size, context.allocator)
+  atlas.glyphs = make(map[rune]Font_Atlas_Glyph, context.allocator)
 
   atlas.current_x = 1
   atlas.current_y = 1

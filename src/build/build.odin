@@ -20,11 +20,6 @@ else when ODIN_OS == .Linux {
 }
 
 main :: proc() {
-	begin_time := time.now()
-  defer {
-    fmt.printf("Build done [%v]\n", time.diff(begin_time, time.now()))
-  }
-
   fmt.printf("Build target [%v]\n", TARGET)
 
   current_wd := os.get_current_directory()
@@ -43,6 +38,8 @@ main :: proc() {
       "src",
       fmt.tprintf("-out:%v/%v", out_dir, EXE_NAME),
       "-define:GLFW_SHARED=false",
+      "-show-timings",
+      "-radlink" when TARGET == .windows else ""
     }
     run_cmd(..c[:])
   }
