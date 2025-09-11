@@ -1,8 +1,9 @@
 package verde
 
+import "core:fmt"
 
 //////////////////////////////////
-// ~geb: Constants Привет
+// ~geb: Constants
 
 MAX_PANEL_COUNT :: 2048
 
@@ -12,6 +13,8 @@ MAX_PANEL_COUNT :: 2048
 Panel_Flags :: bit_set[Panel_Flag; u32]
 Panel_Flag :: enum {
   Invisible,
+  Container,
+  Text,
 }
 
 Panel_Handle :: i32
@@ -55,6 +58,10 @@ Panel_Config :: struct {
   color:            vec4_f32,
   radius:           vec4_f32,
   flags:            Panel_Flags,
+
+  outline_color    :vec4_f32,
+  outline_thickness:f32,
+  text:             string,
 }
 
 
@@ -285,6 +292,108 @@ size_perc  :: #force_inline proc "contextless" (val: f32)     -> Panel_Size_Axis
 size_fill  :: #force_inline proc "contextless" (val: f32 = 1) -> Panel_Size_Axis { return {type = .Fill, value = val} }
 size_fit   :: #force_inline proc "contextless" ()             -> Panel_Size_Axis { return {type = .Fit, value = 0}}
 
-
 //////////////////////////////////
 // ~geb: Prebuilt Components
+
+DEFAULT_PANE_CONFIG := Pane_Render_Config {
+  leaf_color          = hex_color(0x282828),  
+  active_leaf_color   = hex_color(0x282828),  
+  leaf_outline        = hex_color(0x3c3836),  
+
+  active_leaf_outline = hex_color(0x504945),  
+  text_color          = hex_color(0xebdbb2),
+  split_gap           = 1,                    
+  leaf_radius         = 0,                    
+  leaf_padding        = {4,4,4,4},            
+}
+
+layout_panes_recursive :: proc(tree: ^Pane_Tree, handle: Pane_Handle, config: Pane_Render_Config = DEFAULT_PANE_CONFIG) {
+  if !pane_tree_is_valid_handle(tree, handle) do return
+
+  node := &tree.flat_array[handle]
+
+  calculate_child_size :: proc(is_horizontal: bool, split_ratio: f32, split_gap: f32) -> Panel_Size {
+    region := layout_region_left()
+    if is_horizontal {
+      available_height := region.y - split_gap
+      child_height := available_height * split_ratio
+      return {size_fill(), size_fixed(child_height)}
+    } else {
+      available_width := region.x - split_gap
+      child_width := available_width * split_ratio
+      return {size_fixed(child_width), size_fill()}
+    }
+  }
+
+  render_child_panel :: proc(tree: ^Pane_Tree, child_handle: Pane_Handle, size: Panel_Size, config: Pane_Render_Config) {
+    panel_begin({
+      size = size,
+      child_gap = config.split_gap,
+      flags = {.Invisible},
+    })
+    defer panel_end()
+    layout_panes_recursive(tree, child_handle, config)
+  }
+
+  #partial switch node.kind {
+  case .Split_Vertical, .Split_Horizontal:
+    is_horizontal := node.kind == .Split_Horizontal
+    panel_begin({
+      size = {size_fill(), size_fill()},
+      layout_direction = is_horizontal ? .Vertical : .Horizontal,
+      child_gap = config.split_gap,
+      flags = {.Invisible},
+    })
+    defer panel_end()
+
+    if node.child1 >= 0 {
+      child1_size := calculate_child_size(is_horizontal, node.split_ratio, config.split_gap)
+      render_child_panel(tree, node.child1, child1_size, config)
+    }
+
+    if node.child2 >= 0 {
+      child2_size := Panel_Size{size_fill(), size_fill()}
+      render_child_panel(tree, node.child2, child2_size, config)
+    }
+
+  case .Leaf:
+    is_active := handle == tree.active_pane
+    panel_begin({
+      size = {size_fill(), size_fill()},
+      layout_direction = .Vertical,
+      color = is_active ? config.active_leaf_outline : config.leaf_outline,
+      radius=config.leaf_radius,
+      padding = {1,1,1,1},
+      child_gap = 1
+    })
+    defer panel_end()
+
+    region := layout_region_left()
+
+    // Main content area
+    panel_begin({
+      size = {size_fill(), size_fixed(region.y - 25)},
+      color = is_active ? config.active_leaf_color : config.leaf_color,
+      radius = {config.leaf_radius-1, config.leaf_radius-1, 0, 0},
+      padding = config.leaf_padding,
+      flags = {.Container}
+    }); panel_end()
+
+
+    panel_begin({
+      size = {size_fill(), size_fill()},
+      flags = {.Invisible},
+      padding = {3,3,3,3},
+      child_gap = 3,
+      layout_direction = .Horizontal
+    }) 
+    defer panel_end()
+
+    panel_begin({
+      size = {size_fill(), size_fill()},
+      color = config.text_color,
+      text = "src/main.c",
+      flags = {.Text}
+    }); panel_end()
+  }
+}

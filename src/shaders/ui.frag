@@ -13,7 +13,7 @@ void main() {
   int tex_id = int(Frag_TexID);
   float dist = length(Frag_CircCoords) - 1.0;
 
-  float edge_width = fwidth(dist) * 0.5;
+  float edge_width = fwidth(dist) * 0.7;
   float alpha = 1.0 - smoothstep(-edge_width, edge_width, dist);
 
   vec4 base = Frag_Color * texture(Textures[tex_id], Frag_UV);

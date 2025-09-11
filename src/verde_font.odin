@@ -76,6 +76,7 @@ font_atlas_add_glyph :: proc(gfx: ^GFX_State, font_atlas: ^Font_Atlas, codepoint
 
   glyph_index := FindGlyphIndex(&font_atlas.font.font_info, codepoint)
   if glyph_index == 0 && codepoint != ' ' {
+    fmt.println("cant find", codepoint)   
     return false
   }
 
