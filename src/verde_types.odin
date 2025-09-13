@@ -19,6 +19,34 @@ Rect :: struct {
   width, height: f32,
 }
 
+Pivot :: enum u8 {
+  Top_Left,
+  Top_Middle,
+  Top_Right,
+  
+  Center_Left,
+  Center_Middle,
+  Center_Right,
+
+  Bottom_Left,
+  Bottom_Middle,
+  Bottom_Right,
+}
+
+@(rodata) PIVOT_VEC2 := [Pivot]vec2_f32 {
+  .Top_Left   = {0.0, 0.0},
+  .Top_Middle = {0.5, 0.0},
+  .Top_Right  = {1.0, 0.0},
+
+  .Center_Left   = {0.0, 0.5},
+  .Center_Middle = {0.5, 0.5},
+  .Center_Right  = {1.0, 0.5},
+
+  .Bottom_Left   = {0.0, 1.0},
+  .Bottom_Middle = {0.5, 1.0},
+  .Bottom_Right  = {1.0, 1.0},
+}
+
 
 smooth_damp :: proc "contextless" (
   current: $T,

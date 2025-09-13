@@ -55,24 +55,23 @@ Panel_Config :: struct {
   child_gap:        f32,
   layout_direction: Layout_Dir,
 
-  color:            vec4_f32,
   radius:           vec4_f32,
+  color:            vec4_f32,
   flags:            Panel_Flags,
 
-  outline_color    :vec4_f32,
+  outline_color:    vec4_f32,
   outline_thickness:f32,
   text:             string,
+  text_layout:      Pivot,
 }
 
-
 Layout_State :: struct {
-  flat_array:        [^]Panel,
-  panel_count:         u32, 
-  open_panel:          Panel_Handle,
-  layout_dimensions: vec2_f32,
-  cursor_position:   vec2_f32,
-
-  active, hot: Panel_Handle,
+  flat_array:         [^]Panel,
+  panel_count:        u32, 
+  open_panel:         Panel_Handle,
+  layout_dimensions:  vec2_f32,
+  cursor_position:    vec2_f32,
+  active, hot:        Panel_Handle,
 }
 
 //////////////////////////////////
@@ -296,15 +295,15 @@ size_fit   :: #force_inline proc "contextless" ()             -> Panel_Size_Axis
 // ~geb: Prebuilt Components
 
 DEFAULT_PANE_CONFIG := Pane_Render_Config {
-  leaf_color          = hex_color(0x282828),  
-  active_leaf_color   = hex_color(0x282828),  
+  leaf_color          = hex_color(0x131313),  
+  active_leaf_color   = hex_color(0x131313),  
   leaf_outline        = hex_color(0x3c3836),  
 
   active_leaf_outline = hex_color(0x504945),  
-  text_color          = hex_color(0xebdbb2),
-  split_gap           = 1,                    
-  leaf_radius         = 0,                    
-  leaf_padding        = {4,4,4,4},            
+  text_color          = hex_color(0x99856a),
+  split_gap           = 1,
+  leaf_radius         = 5,
+  leaf_padding        = {4,4,4,4},
 }
 
 layout_panes_recursive :: proc(tree: ^Pane_Tree, handle: Pane_Handle, config: Pane_Render_Config = DEFAULT_PANE_CONFIG) {
@@ -361,39 +360,47 @@ layout_panes_recursive :: proc(tree: ^Pane_Tree, handle: Pane_Handle, config: Pa
     panel_begin({
       size = {size_fill(), size_fill()},
       layout_direction = .Vertical,
-      color = is_active ? config.active_leaf_outline : config.leaf_outline,
-      radius=config.leaf_radius,
+      color = is_active ? config.text_color : config.leaf_outline,
       padding = {1,1,1,1},
+      radius = config.leaf_radius,
       child_gap = 1
     })
     defer panel_end()
 
     region := layout_region_left()
 
-    // Main content area
     panel_begin({
       size = {size_fill(), size_fixed(region.y - 25)},
       color = is_active ? config.active_leaf_color : config.leaf_color,
-      radius = {config.leaf_radius-1, config.leaf_radius-1, 0, 0},
-      padding = config.leaf_padding,
-      flags = {.Container}
-    }); panel_end()
-
-
-    panel_begin({
-      size = {size_fill(), size_fill()},
-      flags = {.Invisible},
-      padding = {3,3,3,3},
-      child_gap = 3,
-      layout_direction = .Horizontal
-    }) 
-    defer panel_end()
-
+      flags = {.Container},
+      radius = config.leaf_radius - 1
+    }); 
     panel_begin({
       size = {size_fill(), size_fill()},
       color = config.text_color,
-      text = "src/main.c",
+      text = #load("verde_types.odin"),
+      text_layout = .Top_Left,
+      flags = {.Text},
+      padding = config.leaf_padding,
+    }); panel_end()
+    panel_end()
+
+    panel_begin({
+      size = {size_fill(), size_fill()},
+      color = config.leaf_color,
+      text = "src/verde_types.odin",
+      text_layout = .Center_Left,
       flags = {.Text}
     }); panel_end()
   }
+}
+
+layout_text_position :: proc(
+  panel_bounds: Range_2D, 
+  text_alignment: Pivot, 
+  text_dimensions: vec2_f32
+) -> vec2_f32 {
+  anchor_position := panel_bounds.min + (panel_bounds.max - panel_bounds.min) * PIVOT_VEC2[text_alignment]
+  text_offset := text_dimensions * PIVOT_VEC2[text_alignment]
+  return anchor_position - text_offset
 }

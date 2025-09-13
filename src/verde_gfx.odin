@@ -73,6 +73,7 @@ GFX_State :: struct {
   num_textures : u32,
   texture_freelist : u32,
 
+  clip_rect: Range_2D,
   viewport: [2]i32
 }
 
@@ -329,26 +330,71 @@ gfx_flush :: proc(ctx: ^GFX_State) {
 
 gfx_push_rect :: proc(ctx : ^GFX_State, pos, size : vec2_f32, color:[4]vec4_f32 = 1.0, uv:vec4_f32= {0,0,1,1}, tex_id : u32 = 0) {
   using ctx
+
+  if size.x <= 0 || size.y <= 0 {
+    return
+  }
+
+  if color[0].w == 0 && color[1].w == 0 && color[2].w == 0 && color[3].w == 0 {
+    return
+  }
+
+  bounds := ctx.clip_rect
+  rect_max := pos + size
+  if pos.x >= bounds.max.x || pos.y >= bounds.max.y || 
+  rect_max.x <= bounds.min.x || rect_max.y <= bounds.min.y {
+    return
+  }
+
   if render_buffer.vtx_count + 4 > MAX_VERTEX_COUNT || render_buffer.idx_count + 6 > MAX_VERTEX_COUNT {
     gfx_flush(ctx)
     gfx_prep_frame(ctx)
   }
 
+  rect_min := pos
+  clamped_min := vec2_f32{
+    max(rect_min.x, bounds.min.x),
+    max(rect_min.y, bounds.min.y)
+  }
+  clamped_max := vec2_f32{
+    min(rect_max.x, bounds.max.x),
+    min(rect_max.y, bounds.max.y)
+  }
+
+  if clamped_min.x >= clamped_max.x || clamped_min.y >= clamped_max.y {
+    return
+  }
+
+  p0 := clamped_min
+  p1 := vec2_f32{clamped_max.x, clamped_min.y}
+  p2 := clamped_max
+  p3 := vec2_f32{clamped_min.x, clamped_max.y}
+
+  original_size := size
+  clamped_size := clamped_max - clamped_min
+  offset_from_original := clamped_min - rect_min
+
+  uv_scale := vec2_f32{
+    clamped_size.x / original_size.x,
+    clamped_size.y / original_size.y
+  }
+  uv_offset := vec2_f32{
+    offset_from_original.x / original_size.x,
+    offset_from_original.y / original_size.y
+  }
+
+  uv_min := vec2_f32{uv.x, uv.y} + uv_offset * vec2_f32{uv.z - uv.x, uv.w - uv.y}
+  uv_max := uv_min + uv_scale * vec2_f32{uv.z - uv.x, uv.w - uv.y}
+  adjusted_uv := vec4_f32{uv_min.x, uv_min.y, uv_max.x, uv_max.y}
+
   vc := render_buffer.vtx_count
   ic := render_buffer.idx_count
-
-  p0 := pos
-  p1 := pos + (vec2_f32{size.x, 0})
-  p2 := pos + (vec2_f32{size.x, size.y})
-  p3 := pos + (vec2_f32{0, size.y})
-
-
   f_tex_id := f32(tex_id)
 
-  render_buffer.vertices[vc + 0] = Render_Vertex{p0, color[0], uv.xy, 0, f_tex_id}
-  render_buffer.vertices[vc + 1] = Render_Vertex{p1, color[1], uv.zy, 0, f_tex_id}
-  render_buffer.vertices[vc + 2] = Render_Vertex{p2, color[2], uv.zw, 0, f_tex_id}
-  render_buffer.vertices[vc + 3] = Render_Vertex{p3, color[3], uv.xw, 0, f_tex_id}
+  render_buffer.vertices[vc + 0] = Render_Vertex{p0, color[0], adjusted_uv.xy, 0, f_tex_id}
+  render_buffer.vertices[vc + 1] = Render_Vertex{p1, color[1], adjusted_uv.zy, 0, f_tex_id}
+  render_buffer.vertices[vc + 2] = Render_Vertex{p2, color[2], adjusted_uv.zw, 0, f_tex_id}
+  render_buffer.vertices[vc + 3] = Render_Vertex{p3, color[3], adjusted_uv.xw, 0, f_tex_id}
 
   render_buffer.indices[ic + 0] = vc + 0
   render_buffer.indices[ic + 1] = vc + 1
@@ -516,7 +562,7 @@ gfx_push_text :: proc(
   y: f32 = 0, 
   tab_width: u32 = 4, 
   color: vec4_f32 = 1.0, 
-  monospace_advance: f32 = -1.0
+  monospace_advance: f32 = -1.0,
 ) -> (cx: f32, cy: f32) {
   if len(text) == 0 {
     return x, y
@@ -621,31 +667,25 @@ gfx_resize_target :: proc(ctx : ^GFX_State, w, h : i32) {
   proj := ortho_matrix(0, f32(w), f32(h), 0, -1.0, 100.0)
   gl.UniformMatrix4fv(ctx.uniform_loc[.UI_ProjMatrix], 1, gl.FALSE, &proj[0][0])
   ctx.viewport = {w, h}
-}
-
-gfx_push_clip :: proc(ctx: ^GFX_State, min, max: vec2_f32) {
-  if ctx.render_buffer.vtx_count > 0 {
-    gfx_flush(ctx)
-    gfx_prep_frame(ctx)
+  ctx.clip_rect = {
+    0,
+    {f32(w), f32(h)}
   }
-  gl.Enable(gl.SCISSOR_TEST)
-  gl.Scissor(
-    cast(i32) min.x,
-    ctx.viewport.y - cast(i32) max.y,
-    cast(i32) (max.x - min.x),
-    cast(i32) (max.y - min.y),
-  )
 }
 
-gfx_pop_clip :: proc(ctx: ^GFX_State) {
-  if ctx.render_buffer.vtx_count > 0 {
-    gfx_flush(ctx)
-    gfx_prep_frame(ctx)
+gfx_set_clip :: proc(ctx: ^GFX_State, min, max: vec2_f32) {
+  ctx.clip_rect = {
+    min,
+    max
   }
-
-  gl.Disable(gl.SCISSOR_TEST)
 }
 
+@(deferred_out=gfx_set_clip)
+gfx_push_clip :: proc(ctx: ^GFX_State, min, max: vec2_f32) -> (ctx_out: ^GFX_State, min_out, max_out: vec2_f32) {
+  prev := ctx.clip_rect
+  gfx_set_clip(ctx, min, max)
+  return ctx, prev.min, prev.max
+}
 
 //////////////////////////////////
 // ~geb: Helpers

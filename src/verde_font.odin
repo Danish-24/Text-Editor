@@ -30,6 +30,13 @@ Font_Atlas :: struct {
   dirty : b32,
 }
 
+Text_Metrics :: struct {
+  width: f32,
+  height: f32,
+  ascent: f32,
+  descent: f32,
+}
+
 font_atlas_create :: proc(gfx: ^GFX_State, data: []u8, size : i32 = 512, font_height : f32 = 15) -> (atlas: Font_Atlas, ok: bool) {
   using stbtt
 
@@ -295,4 +302,57 @@ font_atlas_resize_glyphs :: proc(gfx: ^GFX_State, font_atlas: ^Font_Atlas, new_f
 
 font_atlas_height :: #force_inline proc(atlas : ^Font_Atlas) -> f32 {
   return atlas.font.ascent - atlas.font.descent + atlas.font.line_gap
+}
+
+font_atlas_measure :: proc(
+  atlas: ^Font_Atlas, 
+  text: string, 
+  monospace_advance: f32 = -1.0, 
+  tab_width: u32 = 4,
+) -> vec2_f32 {
+  if len(text) <= 0 {
+    return {}
+  }
+
+  line_height := font_atlas_height(atlas)
+  ascent := atlas.font.ascent
+
+  space_glyph, space_ok := font_atlas_get_glyph(atlas, ' ')
+  fallback_advance := space_ok ? space_glyph.xadvance : atlas.font.scale * 8
+  tab_advance := (monospace_advance > 0 ? monospace_advance : fallback_advance) * f32(tab_width)
+
+  cursor_x: f32 = 0
+  cursor_y: f32 = 0
+  max_width: f32 = 0
+
+  for codepoint in text {
+    switch codepoint {
+    case '\n':
+      max_width = max(max_width, cursor_x)
+      cursor_x = 0
+      cursor_y += line_height
+      continue
+
+    case '\t':
+      cursor_x += tab_advance
+      continue
+
+    case '\r':
+      max_width = max(max_width, cursor_x)
+      cursor_x = 0
+      continue
+    }
+
+    glyph, glyph_ok := atlas.glyphs[codepoint]
+    if !glyph_ok {
+      glyph, glyph_ok = atlas.glyphs['?']
+    }
+
+    advance := monospace_advance > 0 ? monospace_advance : (glyph_ok ? glyph.xadvance : fallback_advance)
+    cursor_x += advance
+  }
+
+  max_width = max(max_width, cursor_x)
+
+  return {max_width, cursor_y + line_height}
 }

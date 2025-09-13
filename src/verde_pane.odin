@@ -23,8 +23,8 @@ Pane_Render_Config :: struct {
 
   text_color:          vec4_f32,
 
+  leaf_radius:         vec4_f32,
   split_gap:           f32,
-  leaf_radius:         f32,
 
   leaf_padding:        Panel_Padding,
 }
@@ -255,81 +255,6 @@ pane_tree_get_depth :: proc(tree: ^Pane_Tree, handle: Pane_Handle) -> int {
 Coord maps screen from top left to bottom right as (0, 0) -> (1, 1)
 Finds the nearest split node to the given coordinate by calculating actual distances
 */
-panel_tree_nearest_split :: proc(tree: ^Pane_Tree, coord: vec2_f32) -> ^Pane_Node {
-  if !pane_tree_is_valid_handle(tree, ROOT_PANE_HANDLE) {
-    return nil
-  }
-
-  current_handle := ROOT_PANE_HANDLE
-  nearest_split: ^Pane_Node = nil
-  min_distance := f32(999999.0)
-  
-  min_bounds := vec2_f32{0.0, 0.0}
-  max_bounds := vec2_f32{1.0, 1.0}
-
-  for {
-    if !pane_tree_is_valid_handle(tree, current_handle) {
-      break
-    }
-    
-    current_node := &tree.flat_array[current_handle]
-    
-    if current_node.kind == .Leaf {
-      break
-    }
-    
-    if current_node.kind in SPLIT_NODE_KIND {
-      distance: f32
-      split_coord: vec2_f32
-      
-      if current_node.kind == .Split_Vertical {
-        split_x := min_bounds.x + (max_bounds.x - min_bounds.x) * current_node.split_ratio
-        distance = abs(coord.x - split_x)
-        split_coord = vec2_f32{split_x, coord.y}
-      } else if current_node.kind == .Split_Horizontal {
-        split_y := min_bounds.y + (max_bounds.y - min_bounds.y) * current_node.split_ratio
-        distance = abs(coord.y - split_y)
-        split_coord = vec2_f32{coord.x, split_y}
-      }
-      
-      if distance < min_distance {
-        min_distance = distance
-        nearest_split = current_node
-      }
-      
-      next_handle: Pane_Handle
-      
-      if current_node.kind == .Split_Vertical {
-        split_x := min_bounds.x + (max_bounds.x - min_bounds.x) * current_node.split_ratio
-        
-        if coord.x < split_x {
-          next_handle = current_node.child1
-          max_bounds.x = split_x
-        } else {
-          next_handle = current_node.child2
-          min_bounds.x = split_x
-        }
-      } else if current_node.kind == .Split_Horizontal {
-        split_y := min_bounds.y + (max_bounds.y - min_bounds.y) * current_node.split_ratio
-        
-        if coord.y < split_y {
-          next_handle = current_node.child1
-          max_bounds.y = split_y
-        } else {
-          next_handle = current_node.child2
-          min_bounds.y = split_y
-        }
-      }
-      
-      current_handle = next_handle
-    } else {
-      break
-    }
-  }
-  
-  return nearest_split
-}
-
 pane_tree_focus_move :: proc(tree: ^Pane_Tree, dir: Pane_Move) {
 
   leaf_idx := tree.active_pane
@@ -398,6 +323,16 @@ pane_tree_focus_move :: proc(tree: ^Pane_Tree, dir: Pane_Move) {
 
     current_idx = current.parent
   }
+}
+
+pane_tree_resize :: proc(tree: ^Pane_Tree, handle: Pane_Handle, delta: f32) {
+  if !pane_tree_is_valid_handle(tree, handle) { return }
+  pane := tree.flat_array[handle]
+
+  if pane.kind != .Leaf || pane.parent < 0 { return }
+
+  parent_split := &tree.flat_array[pane.parent]
+  parent_split.split_ratio += delta
 }
 
 ////////////////////////////

@@ -39,7 +39,6 @@ main :: proc() {
       fmt.tprintf("-out:%v/%v", out_dir, EXE_NAME),
       "-define:GLFW_SHARED=false",
       "-show-timings",
-      "-radlink" when TARGET == .windows else ""
     }
     run_cmd(..c[:])
   }

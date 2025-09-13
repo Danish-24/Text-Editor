@@ -12,14 +12,13 @@ import "vendor:glfw"
 Window_Handle :: glfw.WindowHandle
 
 App_Context :: struct {
-	window      : Window_Handle,
-	input       : Input_State,
-	viewport    : [2]f32,
-	gfx         : GFX_State,
+  window      : Window_Handle,
+  input       : Input_State,
+  viewport    : [2]f32,
+  gfx         : GFX_State,
   layout      : Layout_State,
-	font        : Font_Atlas,
-	frame_delta : f32,
-
+  font        : Font_Atlas,
+  frame_delta : f32,
   panes       : Pane_Tree,
 }
 
@@ -156,7 +155,7 @@ app_run :: proc(ctx: ^App_Context) {
 
 _render_frame :: proc(ctx: ^App_Context) {
   cursor_pos := get_pointer(ctx)
-  linear_cursor_pos := cursor_pos / ctx.viewport
+  cursor_delta := get_pointer_delta(ctx)
 
   if is_key_down(ctx, .Left_Control) {
     if on_key_down(ctx, .Enter) {
@@ -166,15 +165,22 @@ _render_frame :: proc(ctx: ^App_Context) {
       pane_tree_collapse(&ctx.panes)
     }
 
-    if on_key_down(ctx, .L) do pane_tree_focus_move(&ctx.panes, .Right)
-    if on_key_down(ctx, .K) do pane_tree_focus_move(&ctx.panes, .Up)
-    if on_key_down(ctx, .J) do pane_tree_focus_move(&ctx.panes, .Down)
-    if on_key_down(ctx, .H) do pane_tree_focus_move(&ctx.panes, .Left)
+    if on_key_down(ctx, .L) {
+      pane_tree_focus_move(&ctx.panes, .Right)
+    } 
+    if on_key_down(ctx, .K) {
+      pane_tree_focus_move(&ctx.panes, .Up)
+    }
+    if on_key_down(ctx, .J) {
+      pane_tree_focus_move(&ctx.panes, .Down)
+    }
+    if on_key_down(ctx, .H) {
+      pane_tree_focus_move(&ctx.panes, .Left)
+    }
   }
 
   layout_begin(ctx.viewport.x, ctx.viewport.y, padding={1,1,1,1})
 
- 
   layout_panes_recursive(&ctx.panes, ROOT_PANE_HANDLE)
 
   panels := layout_end()
@@ -188,12 +194,15 @@ _render_frame :: proc(ctx: ^App_Context) {
     for &panel in panels {
       if .Invisible in panel.flags { continue }
       if .Text in panel.flags && len(panel.text) != 0 {
+        gfx_push_clip(&ctx.gfx, panel.inner_rect.min, panel.inner_rect.max)
+        text_dimensions := font_atlas_measure(&ctx.font, panel.text)
+        text_pos := layout_text_position(panel.inner_rect, panel.text_layout, text_dimensions)
         gfx_push_text(
           &ctx.gfx,
           panel.text,
           &ctx.font,
-          x = panel.inner_rect.min.x,
-          y = (panel.inner_rect.min.y + panel.inner_rect.max.y - height) * 0.5,
+          x = text_pos.x,
+          y = text_pos.y,
           color = panel.color,
         )
       } else if panel.outline_thickness > 0.5 {
@@ -204,12 +213,12 @@ _render_frame :: proc(ctx: ^App_Context) {
           panel.outline_color,
           panel.radius
         )
-        gfx_push_rect_rounded(
+        gfx_push_rect(
           &ctx.gfx,
           panel.position + panel.outline_thickness,
           panel.resolved_size - panel.outline_thickness * 2,
           panel.color,
-          panel.radius - panel.outline_thickness
+          panel.radius - panel.outline_thickness,
         )
       } else {
         gfx_push_rect_rounded(
