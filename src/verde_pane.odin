@@ -15,17 +15,13 @@ SPLIT_NODE_KIND :: bit_set[Pane_Node_Kind] {.Split_Vertical, .Split_Horizontal}
 // ~geb: Types
 
 Pane_Render_Config :: struct {
-  leaf_color:          vec4_f32,
-  active_leaf_color:   vec4_f32,
+  leaf_color:          Color,
+  active_leaf_color:   Color,
+  leaf_outline:        Color,
+  active_leaf_outline: Color,
+  text_color:          Color,
 
-  leaf_outline:        vec4_f32,
-  active_leaf_outline: vec4_f32,
-
-  text_color:          vec4_f32,
-
-  leaf_radius:         vec4_f32,
   split_gap:           f32,
-
   leaf_padding:        Panel_Padding,
 }
 

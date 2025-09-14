@@ -1,0 +1,27 @@
+///////////////////////////////////////////////////////
+// ~geb: TODO list
+
+-------------- Phase 0 -------------- ( more low level )
+[ ] Draw command pooling and processing.
+[ ] Custom Draw elements in UI system.
+
+-------------- Phase 1 -------------- ( higher level stuff )
+[ ] Gap buffer implementation.
+[ ] ~File Buffer~ : An abstraction over underlying editing buffer.
+                    Should be a black-box like interface in which a file
+                    can be edited. All the text editing commands flow 
+                    into said 'File buffer'.
+[ ] Cursor Implementation. Each file buffer has ~one~ ( for now ).
+[ ] Buffer View UI componenet.
+[ ] Cursor UI Component.
+[ ] File opening and writing.
+
+-------------- Phase 2 --------------
+[ ] Performance profiling and identify hotspots.
+[ ] Resolve performance hotspots.
+[ ] Project wide Code cleanup.
+
+-------------- Phase 3 --------------
+[ ] Command List and Undo-Redo feature.
+[ ] Keymap system.
+[ ] Config files.

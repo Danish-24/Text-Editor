@@ -45,7 +45,7 @@ app_init :: proc(ctx: ^App_Context) -> bool {
   }
 
   glfw.MakeContextCurrent(ctx.window)
-  glfw.SwapInterval(0)
+  glfw.SwapInterval(1)
 
   glfw.SetWindowUserPointer(ctx.window, ctx)
 
@@ -128,7 +128,6 @@ app_init :: proc(ctx: ^App_Context) -> bool {
 
   layout_init(&ctx.layout)
   layout_set_context(&ctx.layout)
-
   ctx.panes = pane_tree_create()
   pane_tree_split(&ctx.panes)
 
@@ -180,10 +179,20 @@ _render_frame :: proc(ctx: ^App_Context) {
   }
 
   layout_begin(ctx.viewport.x, ctx.viewport.y, padding={1,1,1,1})
-
-  layout_panes_recursive(&ctx.panes, ROOT_PANE_HANDLE)
+  layout_panes_recursive(&ctx.panes, ROOT_PANE_HANDLE, {
+    leaf_color          = 0x141617_ff,  
+    active_leaf_color   = 0x141617_ff,  
+    leaf_outline        = 0x32302f_ff,  
+    active_leaf_outline = 0x504945_ff,  
+    text_color          = 0xf2e5bc_ff,
+    split_gap           = 0,
+    leaf_padding        = {0, 0, 0, 0},
+  })
 
   panels := layout_end()
+  if on_key_down(ctx, .P) {
+    fmt.println(len(panels))
+  }
 
   gfx_clear(hex_color(0x131313))
   {

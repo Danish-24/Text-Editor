@@ -10,8 +10,8 @@ MAX_PANEL_COUNT :: 2048
 //////////////////////////////////
 // ~geb: Types
  
-Panel_Flags :: bit_set[Panel_Flag; u32]
-Panel_Flag :: enum {
+Panel_Flags :: bit_set[Panel_Flag; u16]
+Panel_Flag :: enum u8 {
   Invisible,
   Container,
   Text,
@@ -34,7 +34,7 @@ Panel :: struct {
 
 Panel_Size :: struct { w, h: Panel_Size_Axis }
 Panel_Size_Axis :: struct {
-  type: enum {
+  type: enum u8 {
     Fixed = 0, 
     ParentPct,
     Fit,
@@ -47,22 +47,23 @@ Panel_Padding :: struct {
   left, top, right, bottom: f32
 }
 
-Layout_Dir :: enum { Vertical, Horizontal }
+Layout_Dir :: enum u8 { Vertical, Horizontal }
 
 Panel_Config :: struct {
+  radius:           vec4_f32,
+  color:            Color,
+  outline_color:    Color,
+  
+  text:             string,
+  
   size:             Panel_Size,
   padding:          Panel_Padding,
-  child_gap:        f32,
-  layout_direction: Layout_Dir,
-
-  radius:           vec4_f32,
-  color:            vec4_f32,
-  flags:            Panel_Flags,
-
-  outline_color:    vec4_f32,
-  outline_thickness:f32,
-  text:             string,
-  text_layout:      Pivot,
+  
+  child_gap:         f32,
+  outline_thickness: f32,
+  layout_direction:  Layout_Dir,
+  text_layout:       Pivot,
+  flags:             Panel_Flags,
 }
 
 Layout_State :: struct {
@@ -96,7 +97,7 @@ layout_begin :: proc(
   direction: Layout_Dir = .Vertical,
   padding: Panel_Padding = {},
   child_gap :f32= 0,
-  color: vec4_f32=0,
+  color: Color=0,
   flags: Panel_Flags = {.Invisible}
 ) {
   _ctx.layout_dimensions = {w, h}
@@ -295,15 +296,13 @@ size_fit   :: #force_inline proc "contextless" ()             -> Panel_Size_Axis
 // ~geb: Prebuilt Components
 
 DEFAULT_PANE_CONFIG := Pane_Render_Config {
-  leaf_color          = hex_color(0x131313),  
-  active_leaf_color   = hex_color(0x131313),  
-  leaf_outline        = hex_color(0x3c3836),  
-
-  active_leaf_outline = hex_color(0x504945),  
-  text_color          = hex_color(0x99856a),
-  split_gap           = 1,
-  leaf_radius         = 5,
-  leaf_padding        = {4,4,4,4},
+  leaf_color          = 0x131313_ff,  
+  active_leaf_color   = 0x131313_ff,  
+  leaf_outline        = 0x3c3836_ff,  
+  active_leaf_outline = 0x504945_ff,  
+  text_color          = 0x99856a_ff,
+  split_gap           = 0,
+  leaf_padding        = {0, 0, 0, 0},
 }
 
 layout_panes_recursive :: proc(tree: ^Pane_Tree, handle: Pane_Handle, config: Pane_Render_Config = DEFAULT_PANE_CONFIG) {
@@ -360,9 +359,8 @@ layout_panes_recursive :: proc(tree: ^Pane_Tree, handle: Pane_Handle, config: Pa
     panel_begin({
       size = {size_fill(), size_fill()},
       layout_direction = .Vertical,
-      color = is_active ? config.text_color : config.leaf_outline,
+      color = is_active ? config.active_leaf_outline : config.leaf_outline,
       padding = {1,1,1,1},
-      radius = config.leaf_radius,
       child_gap = 1
     })
     defer panel_end()
@@ -373,12 +371,11 @@ layout_panes_recursive :: proc(tree: ^Pane_Tree, handle: Pane_Handle, config: Pa
       size = {size_fill(), size_fixed(region.y - 25)},
       color = is_active ? config.active_leaf_color : config.leaf_color,
       flags = {.Container},
-      radius = config.leaf_radius - 1
     }); 
     panel_begin({
       size = {size_fill(), size_fill()},
       color = config.text_color,
-      text = #load("verde_types.odin"),
+      text = #load("shaders/ui.frag"),
       text_layout = .Top_Left,
       flags = {.Text},
       padding = config.leaf_padding,
@@ -387,7 +384,7 @@ layout_panes_recursive :: proc(tree: ^Pane_Tree, handle: Pane_Handle, config: Pa
 
     panel_begin({
       size = {size_fill(), size_fill()},
-      color = config.leaf_color,
+      color = config.text_color,
       text = "src/verde_types.odin",
       text_layout = .Center_Left,
       flags = {.Text}
