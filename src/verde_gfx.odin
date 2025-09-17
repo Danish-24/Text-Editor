@@ -59,7 +59,7 @@ Texture_Handle :: struct {
 }
 
 Texture :: struct {
-  data: rawptr,
+  data: [^]u8,
   width, height, channels: i32,
 }
 

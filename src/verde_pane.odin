@@ -3,8 +3,7 @@ package verde
 //////////////////////////////////
 // ~geb: Constants
 
-MAX_SPLIT_DEPTH :: 3
-MAX_LEAF_COUNT  :: 8 // 2 ^ MAX_SPLIT_DEPTH
+MAX_LEAF_COUNT  :: 8
 MAX_TREE_NODES  :: 2 * MAX_LEAF_COUNT - 1
 ROOT_PANE_HANDLE:: Pane_Handle(0)
 INVALID_PANE_HANDLE :: Pane_Handle(-1)
@@ -124,6 +123,7 @@ pane_tree_split :: proc(tree: ^Pane_Tree, horizontal := false, ratio: f32 = 0.5)
     split_ratio = 0.0,
     kind = .Leaf,
   }
+
   
   active_node.child1 = child1_handle
   active_node.child2 = child2_handle

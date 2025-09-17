@@ -15,6 +15,8 @@ Panel_Flag :: enum u8 {
   Invisible,
   Container,
   Text,
+  Cursor_Invisible,
+  Custom_Draw,
 }
 
 Panel_Handle :: i32
@@ -49,21 +51,22 @@ Panel_Padding :: struct {
 
 Layout_Dir :: enum u8 { Vertical, Horizontal }
 
+Custom_Draw_Proc :: #type proc(gfx: ^GFX_State, panel: ^Panel)
+
 Panel_Config :: struct {
-  radius:           vec4_f32,
-  color:            Color,
-  outline_color:    Color,
-  
-  text:             string,
-  
-  size:             Panel_Size,
-  padding:          Panel_Padding,
-  
-  child_gap:         f32,
-  outline_thickness: f32,
-  layout_direction:  Layout_Dir,
-  text_layout:       Pivot,
-  flags:             Panel_Flags,
+  radius:             vec4_f32,
+  color:              Color,
+  outline_color:      Color,
+  text:               string,
+  size:               Panel_Size,
+  padding:            Panel_Padding,
+  child_gap:          f32,
+  outline_thickness:  f32,
+  layout_direction:   Layout_Dir,
+  text_layout:        Pivot,
+  flags:              Panel_Flags,
+  custom_draw_data:   rawptr,
+  custom_draw_proc:   Custom_Draw_Proc
 }
 
 Layout_State :: struct {
@@ -248,7 +251,7 @@ panel_end :: proc() {
 
   open_panel = parent_idx
 
-  if parent_idx >= 0 {
+  if parent_idx >= 0 && .Cursor_Invisible not_in current_panel.flags {
     parent := &flat_array[parent_idx]
     layout := parent.layout_direction
 
@@ -299,10 +302,20 @@ DEFAULT_PANE_CONFIG := Pane_Render_Config {
   leaf_color          = 0x131313_ff,  
   active_leaf_color   = 0x131313_ff,  
   leaf_outline        = 0x3c3836_ff,  
-  active_leaf_outline = 0x504945_ff,  
+  active_leaf_outline = 0x99856a_ff,  
   text_color          = 0x99856a_ff,
-  split_gap           = 0,
-  leaf_padding        = {0, 0, 0, 0},
+  split_gap           = 2,
+  leaf_padding        = {2,2,2,2},
+}
+
+layout_text_position :: proc(
+  panel_bounds: Range_2D, 
+  text_alignment: Pivot, 
+  text_dimensions: vec2_f32
+) -> vec2_f32 {
+  anchor_position := panel_bounds.min + (panel_bounds.max - panel_bounds.min) * PIVOT_VEC2[text_alignment]
+  text_offset := text_dimensions * PIVOT_VEC2[text_alignment]
+  return anchor_position - text_offset
 }
 
 layout_panes_recursive :: proc(tree: ^Pane_Tree, handle: Pane_Handle, config: Pane_Render_Config = DEFAULT_PANE_CONFIG) {
@@ -361,43 +374,34 @@ layout_panes_recursive :: proc(tree: ^Pane_Tree, handle: Pane_Handle, config: Pa
       layout_direction = .Vertical,
       color = is_active ? config.active_leaf_outline : config.leaf_outline,
       padding = {1,1,1,1},
-      child_gap = 1
+      radius = 5,
     })
     defer panel_end()
 
     region := layout_region_left()
 
     panel_begin({
-      size = {size_fill(), size_fixed(region.y - 25)},
+      size = {size_fill(), size_fixed(region.y - 22)},
       color = is_active ? config.active_leaf_color : config.leaf_color,
-      flags = {.Container},
+      radius = {4,4,0,0},
     }); 
     panel_begin({
       size = {size_fill(), size_fill()},
       color = config.text_color,
-      text = #load("shaders/ui.frag"),
+      text = fmt.tprintf("%p", node),
       text_layout = .Top_Left,
-      flags = {.Text},
+      flags = {.Text, .Custom_Draw},
       padding = config.leaf_padding,
     }); panel_end()
+
     panel_end()
 
     panel_begin({
       size = {size_fill(), size_fill()},
-      color = config.text_color,
+      color = config.leaf_color,
       text = "src/verde_types.odin",
       text_layout = .Center_Left,
       flags = {.Text}
     }); panel_end()
   }
-}
-
-layout_text_position :: proc(
-  panel_bounds: Range_2D, 
-  text_alignment: Pivot, 
-  text_dimensions: vec2_f32
-) -> vec2_f32 {
-  anchor_position := panel_bounds.min + (panel_bounds.max - panel_bounds.min) * PIVOT_VEC2[text_alignment]
-  text_offset := text_dimensions * PIVOT_VEC2[text_alignment]
-  return anchor_position - text_offset
 }

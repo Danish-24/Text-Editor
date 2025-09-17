@@ -45,7 +45,7 @@ app_init :: proc(ctx: ^App_Context) -> bool {
   }
 
   glfw.MakeContextCurrent(ctx.window)
-  glfw.SwapInterval(1)
+  glfw.SwapInterval(0)
 
   glfw.SetWindowUserPointer(ctx.window, ctx)
 
@@ -139,12 +139,34 @@ app_run :: proc(ctx: ^App_Context) {
   time_last: f32 = 0.0
 
   for !glfw.WindowShouldClose(ctx.window) {
-    free_all(context.temp_allocator)
-    _poll_input(ctx)
-
     time_last = time_now
     time_now = cast(f32) glfw.GetTime()
     ctx.frame_delta = time_now - time_last
+
+    free_all(context.temp_allocator)
+    _poll_input(ctx)
+
+    if is_key_down(ctx, .Left_Control) {
+      if on_key_down(ctx, .Enter) {
+        pane_tree_split(&ctx.panes, horizontal = is_key_down(ctx, .Left_Shift))
+      }
+      if on_key_down(ctx, .Backspace){
+        pane_tree_collapse(&ctx.panes)
+      }
+
+      if on_key_down(ctx, .L) {
+        pane_tree_focus_move(&ctx.panes, .Right)
+      } 
+      if on_key_down(ctx, .K) {
+        pane_tree_focus_move(&ctx.panes, .Up)
+      }
+      if on_key_down(ctx, .J) {
+        pane_tree_focus_move(&ctx.panes, .Down)
+      }
+      if on_key_down(ctx, .H) {
+        pane_tree_focus_move(&ctx.panes, .Left)
+      }
+    }
 
     _render_frame(ctx)
 
@@ -153,93 +175,22 @@ app_run :: proc(ctx: ^App_Context) {
 }
 
 _render_frame :: proc(ctx: ^App_Context) {
+  @(static) smooth_cursor : vec2_f32
   cursor_pos := get_pointer(ctx)
   cursor_delta := get_pointer_delta(ctx)
 
-  if is_key_down(ctx, .Left_Control) {
-    if on_key_down(ctx, .Enter) {
-      pane_tree_split(&ctx.panes, horizontal = is_key_down(ctx, .Left_Shift))
-    }
-    if on_key_down(ctx, .Backspace){
-      pane_tree_collapse(&ctx.panes)
-    }
+  smooth_cursor = smooth_damp(smooth_cursor, cursor_pos, 0.2, ctx.frame_delta)
 
-    if on_key_down(ctx, .L) {
-      pane_tree_focus_move(&ctx.panes, .Right)
-    } 
-    if on_key_down(ctx, .K) {
-      pane_tree_focus_move(&ctx.panes, .Up)
-    }
-    if on_key_down(ctx, .J) {
-      pane_tree_focus_move(&ctx.panes, .Down)
-    }
-    if on_key_down(ctx, .H) {
-      pane_tree_focus_move(&ctx.panes, .Left)
-    }
-  }
 
-  layout_begin(ctx.viewport.x, ctx.viewport.y, padding={1,1,1,1})
-  layout_panes_recursive(&ctx.panes, ROOT_PANE_HANDLE, {
-    leaf_color          = 0x141617_ff,  
-    active_leaf_color   = 0x141617_ff,  
-    leaf_outline        = 0x32302f_ff,  
-    active_leaf_outline = 0x504945_ff,  
-    text_color          = 0xf2e5bc_ff,
-    split_gap           = 0,
-    leaf_padding        = {0, 0, 0, 0},
-  })
-
+  layout_begin(ctx.viewport.x, ctx.viewport.y)
+  layout_panes_recursive(&ctx.panes, ROOT_PANE_HANDLE)
   panels := layout_end()
-  if on_key_down(ctx, .P) {
-    fmt.println(len(panels))
-  }
 
-  gfx_clear(hex_color(0x131313))
-  {
-    gfx_begin_frame(&ctx.gfx)
-    defer gfx_end_frame(&ctx.gfx)
+  gfx_clear(0)
+  gfx_begin_frame(&ctx.gfx)
+  defer gfx_end_frame(&ctx.gfx)
 
-    height := font_atlas_height(&ctx.font)
-    for &panel in panels {
-      if .Invisible in panel.flags { continue }
-      if .Text in panel.flags && len(panel.text) != 0 {
-        gfx_push_clip(&ctx.gfx, panel.inner_rect.min, panel.inner_rect.max)
-        text_dimensions := font_atlas_measure(&ctx.font, panel.text)
-        text_pos := layout_text_position(panel.inner_rect, panel.text_layout, text_dimensions)
-        gfx_push_text(
-          &ctx.gfx,
-          panel.text,
-          &ctx.font,
-          x = text_pos.x,
-          y = text_pos.y,
-          color = panel.color,
-        )
-      } else if panel.outline_thickness > 0.5 {
-        gfx_push_rect_rounded(
-          &ctx.gfx,
-          panel.position,
-          panel.resolved_size,
-          panel.outline_color,
-          panel.radius
-        )
-        gfx_push_rect(
-          &ctx.gfx,
-          panel.position + panel.outline_thickness,
-          panel.resolved_size - panel.outline_thickness * 2,
-          panel.color,
-          panel.radius - panel.outline_thickness,
-        )
-      } else {
-        gfx_push_rect_rounded(
-          &ctx.gfx,
-          panel.position,
-          panel.resolved_size,
-          panel.color,
-          panel.radius
-        )
-      }
-    }
-  }
+  draw_panels(&ctx.gfx, &ctx.font, panels)
 }
 
 _poll_input :: proc(ctx: ^App_Context) {

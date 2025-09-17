@@ -2,8 +2,7 @@
 // ~geb: TODO list
 
 -------------- Phase 0 -------------- ( more low level )
-[ ] Draw command pooling and processing.
-[ ] Custom Draw elements in UI system.
+[*] Custom Draw elements in UI system.
 
 -------------- Phase 1 -------------- ( higher level stuff )
 [ ] Gap buffer implementation.
