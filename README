@@ -9,11 +9,26 @@ accelerated rendering. *This is an early-stage project*
 Build Instructions
 ------------------
 Prerequisites:
-- Odin compiler
+- Odin compiler ( 
+    if it throws compile time ( mainly on linux )
+    errors regarding glfw / stb libraries
+    follow the instructions given for stb ( make -C ... )
+    and compile the glfw3 library yourself and place it 
+    in the 'vendor/glfw/lib' directory.
+
+    ie. 
+    git clone https://github.com/GLFW/glfw
+    cd glfw
+    mkdir build
+    mkdir build && cd build
+    cmake -DBUILD_SHARED_LIBS=ON -DGLFW_BUILD_WAYLAND=ON ..
+
+    then copy the libglfw3.a
+  )
 - OpenGL 3.3 or higher compatible GPU
 
 Linux / macOS:
-1. Install glfw3 with your package manager 
+1. Make sure glfw3 is compiled and setup
 2. Compile the stb bindings for Odin in vendor
 2. Build:
        ./build.sh

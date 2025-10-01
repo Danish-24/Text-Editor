@@ -37,7 +37,7 @@ Text_Metrics :: struct {
   descent: f32,
 }
 
-font_atlas_create :: proc(gfx: ^GFX_State, data: []u8, size : i32 = 512, font_height : f32 = 15) -> (atlas: Font_Atlas, ok: bool) {
+font_atlas_new :: proc(gfx: ^GFX_State, data: []u8, size : i32 = 512, font_height : f32 = 15) -> (atlas: Font_Atlas, ok: bool) {
   using stbtt
 
   if !InitFont(&atlas.font.font_info, raw_data(data), 0) {

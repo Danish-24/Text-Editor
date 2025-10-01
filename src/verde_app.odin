@@ -11,8 +11,16 @@ import "vendor:glfw"
 
 Window_Handle :: glfw.WindowHandle
 
+
+App_Settings :: struct {
+  
+  target_framerate: int,
+
+}
+
 App_Context :: struct {
   window      : Window_Handle,
+  settings    : App_Settings,
   input       : Input_State,
   viewport    : [2]f32,
   gfx         : GFX_State,
@@ -43,6 +51,8 @@ app_init :: proc(ctx: ^App_Context) -> bool {
 		fmt.eprintln("Failed to create window")
 		return false
   }
+
+  ctx.settings.target_framerate = 120
 
   glfw.MakeContextCurrent(ctx.window)
   glfw.SwapInterval(0)
@@ -116,7 +126,7 @@ app_init :: proc(ctx: ^App_Context) -> bool {
   ctx.viewport = {WIDTH, HEIGHT}
   gfx_resize_target(&ctx.gfx, i32(ctx.viewport.x), i32(ctx.viewport.y))
 
-  ctx.font, ok = font_atlas_create(&ctx.gfx, #load("fonts/jetbrains_mono.ttf"), font_height = 22)
+  ctx.font, ok = font_atlas_new(&ctx.gfx, #load("fonts/jetbrains_mono.ttf"), font_height = 22)
   if !ok {
     fmt.eprintln("Failed to create font atlas")
     return false
@@ -129,28 +139,30 @@ app_init :: proc(ctx: ^App_Context) -> bool {
   layout_init(&ctx.layout)
   layout_set_context(&ctx.layout)
   ctx.panes = pane_tree_create()
-  pane_tree_split(&ctx.panes)
 
   return true
 }
 
 app_run :: proc(ctx: ^App_Context) {
-  time_now: f32 = 0.0
-  time_last: f32 = 0.0
+
+  time_last := time.now()
 
   for !glfw.WindowShouldClose(ctx.window) {
-    time_last = time_now
-    time_now = cast(f32) glfw.GetTime()
-    ctx.frame_delta = time_now - time_last
+    
+    target_frame_time := time.Second / auto_cast ctx.settings.target_framerate
 
-    free_all(context.temp_allocator)
+    time_now := time.now()
+    ctx.frame_delta = f32(time.diff(time_last, time_now)) / f32(time.Second)
+    time_last = time_now
+
     _poll_input(ctx)
 
+    // --- input handling ---
     if is_key_down(ctx, .Left_Control) {
       if on_key_down(ctx, .Enter) {
         pane_tree_split(&ctx.panes, horizontal = is_key_down(ctx, .Left_Shift))
       }
-      if on_key_down(ctx, .Backspace){
+      if on_key_down(ctx, .Backspace) {
         pane_tree_collapse(&ctx.panes)
       }
 
@@ -169,24 +181,43 @@ app_run :: proc(ctx: ^App_Context) {
     }
 
     _render_frame(ctx)
-
     glfw.SwapBuffers(ctx.window)
+
+    // --- frame limiter ---
+    frame_time_ns := time.diff(time_last, time.now())
+    sleep_duration := target_frame_time - frame_time_ns
+    if sleep_duration > 0 {
+      time.sleep(sleep_duration)
+    }
+
+    free_all(context.temp_allocator)
   }
 }
 
 _render_frame :: proc(ctx: ^App_Context) {
-  @(static) smooth_cursor : vec2_f32
-  cursor_pos := get_pointer(ctx)
-  cursor_delta := get_pointer_delta(ctx)
-
-  smooth_cursor = smooth_damp(smooth_cursor, cursor_pos, 0.2, ctx.frame_delta)
-
-
   layout_begin(ctx.viewport.x, ctx.viewport.y)
-  layout_panes_recursive(&ctx.panes, ROOT_PANE_HANDLE)
+
+  panel_begin({
+    size = {size_fill(), size_fixed(ctx.viewport.y - 22)},
+    flags = {.Invisible},
+  })
+
+  layout_panes_recursive(ctx, ROOT_PANE_HANDLE)
+  panel_end()
+
+  panel_begin({
+    flags = {.Text},
+    color = 0x99856a_ff,
+    text  = fmt.tprintf("fps: %v", int(1/ctx.frame_delta)),
+    text_layout = .Center_Left,
+    size = {size_fill(), size_fill()},
+  })
+  panel_end()
+
   panels := layout_end()
 
-  gfx_clear(0)
+  gfx_clear(hex_color(0x131313))
+
   gfx_begin_frame(&ctx.gfx)
   defer gfx_end_frame(&ctx.gfx)
 

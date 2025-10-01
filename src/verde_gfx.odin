@@ -79,7 +79,10 @@ GFX_State :: struct {
   num_textures : u32,
   texture_freelist : u32,
 
-  clip_rect: Range_2D,
+  clip_rect: struct {
+    using _base : Range_2D,
+    hardware_clip : bool,
+  },
   viewport: [2]i32
 }
 
@@ -343,6 +346,8 @@ gfx_push_rect :: proc(ctx : ^GFX_State, pos, size : vec2_f32, color:[4]Color = C
 
   bounds := ctx.clip_rect
   rect_max := pos + size
+  
+  // Early rejection test
   if pos.x >= bounds.max.x || pos.y >= bounds.max.y || 
   rect_max.x <= bounds.min.x || rect_max.y <= bounds.min.y {
     return
@@ -353,41 +358,52 @@ gfx_push_rect :: proc(ctx : ^GFX_State, pos, size : vec2_f32, color:[4]Color = C
     gfx_prep_frame(ctx)
   }
 
-  rect_min := pos
-  clamped_min := vec2_f32{
-    max(rect_min.x, bounds.min.x),
-    max(rect_min.y, bounds.min.y)
-  }
-  clamped_max := vec2_f32{
-    min(rect_max.x, bounds.max.x),
-    min(rect_max.y, bounds.max.y)
-  }
+  p0, p1, p2, p3: vec2_f32
+  adjusted_uv := uv
+  
+  if !ctx.clip_rect.hardware_clip {
+    rect_min := pos
+    clamped_min := vec2_f32{
+      max(rect_min.x, bounds.min.x),
+      max(rect_min.y, bounds.min.y)
+    }
+    clamped_max := vec2_f32{
+      min(rect_max.x, bounds.max.x),
+      min(rect_max.y, bounds.max.y)
+    }
 
-  if clamped_min.x >= clamped_max.x || clamped_min.y >= clamped_max.y {
-    return
+    if clamped_min.x >= clamped_max.x || clamped_min.y >= clamped_max.y {
+      return
+    }
+
+    p0 = clamped_min
+    p1 = vec2_f32{clamped_max.x, clamped_min.y}
+    p2 = clamped_max
+    p3 = vec2_f32{clamped_min.x, clamped_max.y}
+
+    // UV adjustment code...
+    original_size := size
+    clamped_size := clamped_max - clamped_min
+    offset_from_original := clamped_min - rect_min
+
+    uv_scale := vec2_f32{
+      clamped_size.x / original_size.x,
+      clamped_size.y / original_size.y
+    }
+    uv_offset := vec2_f32{
+      offset_from_original.x / original_size.x,
+      offset_from_original.y / original_size.y
+    }
+
+    uv_min := vec2_f32{uv.x, uv.y} + uv_offset * vec2_f32{uv.z - uv.x, uv.w - uv.y}
+    uv_max := uv_min + uv_scale * vec2_f32{uv.z - uv.x, uv.w - uv.y}
+    adjusted_uv = vec4_f32{uv_min.x, uv_min.y, uv_max.x, uv_max.y}
+  } else {
+    p0 = pos
+    p1 = vec2_f32{pos.x + size.x, pos.y}
+    p2 = pos + size
+    p3 = vec2_f32{pos.x, pos.y + size.y}
   }
-
-  p0 := clamped_min
-  p1 := vec2_f32{clamped_max.x, clamped_min.y}
-  p2 := clamped_max
-  p3 := vec2_f32{clamped_min.x, clamped_max.y}
-
-  original_size := size
-  clamped_size := clamped_max - clamped_min
-  offset_from_original := clamped_min - rect_min
-
-  uv_scale := vec2_f32{
-    clamped_size.x / original_size.x,
-    clamped_size.y / original_size.y
-  }
-  uv_offset := vec2_f32{
-    offset_from_original.x / original_size.x,
-    offset_from_original.y / original_size.y
-  }
-
-  uv_min := vec2_f32{uv.x, uv.y} + uv_offset * vec2_f32{uv.z - uv.x, uv.w - uv.y}
-  uv_max := uv_min + uv_scale * vec2_f32{uv.z - uv.x, uv.w - uv.y}
-  adjusted_uv := vec4_f32{uv_min.x, uv_min.y, uv_max.x, uv_max.y}
 
   vc := render_buffer.vtx_count
   ic := render_buffer.idx_count
@@ -692,24 +708,49 @@ gfx_resize_target :: proc(ctx : ^GFX_State, w, h : i32) {
   proj := ortho_matrix(0, f32(w), f32(h), 0, -1.0, 100.0)
   gl.UniformMatrix4fv(ctx.uniform_loc[.UI_ProjMatrix], 1, gl.FALSE, &proj[0][0])
   ctx.viewport = {w, h}
-  ctx.clip_rect = {
-    0,
-    {f32(w), f32(h)}
-  }
+  gfx_set_clip(ctx, {0, 0}, {cast(f32)w, cast(f32)h}, false)
 }
 
-gfx_set_clip :: proc(ctx: ^GFX_State, min, max: vec2_f32) {
+gfx_set_clip :: proc(ctx: ^GFX_State, min, max: vec2_f32, hardware: bool) {
+  if hardware != ctx.clip_rect.hardware_clip || 
+  (hardware && (ctx.clip_rect.min != min || ctx.clip_rect.max != max)) {
+    gfx_flush(ctx)
+    gfx_prep_frame(ctx)
+  }
+
   ctx.clip_rect = {
-    min,
-    max
+    min = min,
+    max = max,
+    hardware_clip = hardware,
+  }
+
+  if hardware {
+    gl.Enable(gl.SCISSOR_TEST)
+    scissor_y := ctx.viewport.y - cast(i32) min.y - cast(i32) (max.y - min.y)
+    gl.Scissor(
+      cast(i32) min.x,
+      scissor_y,
+      cast(i32) (max.x - min.x),
+      cast(i32) (max.y - min.y),
+    )
+  } else {
+    gl.Disable(gl.SCISSOR_TEST)
   }
 }
 
 @(deferred_out=gfx_set_clip)
-gfx_push_clip :: proc(ctx: ^GFX_State, min, max: vec2_f32) -> (ctx_out: ^GFX_State, min_out, max_out: vec2_f32) {
+gfx_push_clip :: proc(
+  ctx: ^GFX_State, 
+  min, max: vec2_f32,
+  hardware_clip: bool = false,
+) -> (
+  ctx_out: ^GFX_State, 
+  min_out, max_out: vec2_f32,
+  is_scissored_out: bool,
+) {
   prev := ctx.clip_rect
-  gfx_set_clip(ctx, min, max)
-  return ctx, prev.min, prev.max
+  gfx_set_clip(ctx, min, max, hardware_clip)
+  return ctx, prev.min, prev.max, prev.hardware_clip
 }
 
 //////////////////////////////////

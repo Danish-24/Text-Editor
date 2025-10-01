@@ -304,7 +304,7 @@ DEFAULT_PANE_CONFIG := Pane_Render_Config {
   leaf_outline        = 0x3c3836_ff,  
   active_leaf_outline = 0x99856a_ff,  
   text_color          = 0x99856a_ff,
-  split_gap           = 2,
+  split_gap           = 1,
   leaf_padding        = {2,2,2,2},
 }
 
@@ -318,9 +318,9 @@ layout_text_position :: proc(
   return anchor_position - text_offset
 }
 
-layout_panes_recursive :: proc(tree: ^Pane_Tree, handle: Pane_Handle, config: Pane_Render_Config = DEFAULT_PANE_CONFIG) {
+layout_panes_recursive :: proc(ctx: ^App_Context, handle: Pane_Handle, config: Pane_Render_Config = DEFAULT_PANE_CONFIG) {
+  tree := &ctx.panes
   if !pane_tree_is_valid_handle(tree, handle) do return
-
   node := &tree.flat_array[handle]
 
   calculate_child_size :: proc(is_horizontal: bool, split_ratio: f32, split_gap: f32) -> Panel_Size {
@@ -336,14 +336,14 @@ layout_panes_recursive :: proc(tree: ^Pane_Tree, handle: Pane_Handle, config: Pa
     }
   }
 
-  render_child_panel :: proc(tree: ^Pane_Tree, child_handle: Pane_Handle, size: Panel_Size, config: Pane_Render_Config) {
+  render_child_panel :: proc(ctx: ^App_Context, child_handle: Pane_Handle, size: Panel_Size, config: Pane_Render_Config) {
     panel_begin({
       size = size,
       child_gap = config.split_gap,
       flags = {.Invisible},
     })
     defer panel_end()
-    layout_panes_recursive(tree, child_handle, config)
+    layout_panes_recursive(ctx, child_handle, config)
   }
 
   #partial switch node.kind {
@@ -359,12 +359,12 @@ layout_panes_recursive :: proc(tree: ^Pane_Tree, handle: Pane_Handle, config: Pa
 
     if node.child1 >= 0 {
       child1_size := calculate_child_size(is_horizontal, node.split_ratio, config.split_gap)
-      render_child_panel(tree, node.child1, child1_size, config)
+      render_child_panel(ctx, node.child1, child1_size, config)
     }
 
     if node.child2 >= 0 {
       child2_size := Panel_Size{size_fill(), size_fill()}
-      render_child_panel(tree, node.child2, child2_size, config)
+      render_child_panel(ctx, node.child2, child2_size, config)
     }
 
   case .Leaf:
@@ -374,7 +374,6 @@ layout_panes_recursive :: proc(tree: ^Pane_Tree, handle: Pane_Handle, config: Pa
       layout_direction = .Vertical,
       color = is_active ? config.active_leaf_outline : config.leaf_outline,
       padding = {1,1,1,1},
-      radius = 5,
     })
     defer panel_end()
 
@@ -383,15 +382,14 @@ layout_panes_recursive :: proc(tree: ^Pane_Tree, handle: Pane_Handle, config: Pa
     panel_begin({
       size = {size_fill(), size_fixed(region.y - 22)},
       color = is_active ? config.active_leaf_color : config.leaf_color,
-      radius = {4,4,0,0},
     }); 
     panel_begin({
       size = {size_fill(), size_fill()},
       color = config.text_color,
-      text = fmt.tprintf("%p", node),
-      text_layout = .Top_Left,
-      flags = {.Text, .Custom_Draw},
+      flags = {.Custom_Draw},
       padding = config.leaf_padding,
+      custom_draw_proc = draw_file_buffer_view,
+      custom_draw_data = ctx
     }); panel_end()
 
     panel_end()
@@ -399,9 +397,10 @@ layout_panes_recursive :: proc(tree: ^Pane_Tree, handle: Pane_Handle, config: Pa
     panel_begin({
       size = {size_fill(), size_fill()},
       color = config.leaf_color,
-      text = "src/verde_types.odin",
+      text = "verde_types.odin",
       text_layout = .Center_Left,
-      flags = {.Text}
+      flags = {.Text},
+      padding = {2,2,2,2},
     }); panel_end()
   }
 }
